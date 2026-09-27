@@ -1,3 +1,0 @@
-[console_scripts]
-carbide-sensor = carbide.sensor.__main__:main
-carbide-server = carbide.server.__main__:main
