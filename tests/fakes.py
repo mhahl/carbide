@@ -1,0 +1,322 @@
+"""In-memory fakes mirroring Database and PodmanWrapper for unit tests."""
+import datetime
+import io
+import tarfile
+
+
+def utcnow():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+class FakeDatabase:
+    def __init__(self):
+        self.sensors = {}
+        self.affinities = {}
+        self.sessions = {}
+        self.attempts = []
+        self.transcripts = []
+        self.blobs = {}
+        self.files = []
+        self.diffs = []
+        self.reports = {}
+        self.snapshots = []
+        self.squid = []
+        self.applied = set()
+
+    async def note_sensor(self, sensor_id):
+        self.sensors.setdefault(sensor_id, {"first": utcnow()})
+        self.sensors[sensor_id]["last"] = utcnow()
+
+    async def get_affinity(self, sensor_id, ip):
+        return self.affinities.get((sensor_id, ip))
+
+    async def get_affinity_by_container_ip(self, container_ip):
+        for aff in self.affinities.values():
+            if aff["container_ip"] == container_ip:
+                return aff
+        return None
+
+    async def set_affinity(self, sensor_id, ip, container_id, ssh_port,
+                           ssh_password, container_ip, created_at=None,
+                           last_session_end=None, has_activity=False):
+        self.affinities[(sensor_id, ip)] = {
+            "sensor_id": sensor_id, "attacker_ip": ip,
+            "container_id": container_id, "ssh_port": ssh_port,
+            "ssh_password": ssh_password, "container_ip": container_ip,
+            "has_activity": has_activity,
+            "created_at": created_at or utcnow(),
+            "last_session_end": last_session_end,
+        }
+
+    async def set_affinity_activity(self, sensor_id, ip, active):
+        # Mirror UPDATE semantics: no row, no-op.
+        if (sensor_id, ip) in self.affinities:
+            self.affinities[(sensor_id, ip)]["has_activity"] = active
+
+    async def touch_affinity_end(self, sensor_id, ip):
+        if (sensor_id, ip) in self.affinities:
+            self.affinities[(sensor_id, ip)][
+                "last_session_end"] = utcnow()
+
+    async def list_affinities(self):
+        return list(self.affinities.values())
+
+    async def delete_affinity(self, sensor_id, ip):
+        self.affinities.pop((sensor_id, ip), None)
+
+    async def ports_in_use(self):
+        return {a["ssh_port"] for a in self.affinities.values()}
+
+    async def ensure_session(self, session_id, sensor_id, ip):
+        self.sessions.setdefault(session_id, {
+            "session_id": session_id, "sensor_id": sensor_id,
+            "attacker_ip": ip, "username": "", "container_id": "",
+            "fresh": None, "over_quota": False, "started_at": None,
+            "ended_at": None, "end_reason": ""})
+
+    async def set_session_started(self, session_id, username, at, ip=None):
+        update = {"username": username, "started_at": at}
+        if ip is not None:
+            update["attacker_ip"] = ip
+        self.sessions[session_id].update(update)
+
+    async def set_session_container(self, session_id, container_id, fresh):
+        self.sessions[session_id].update(
+            {"container_id": container_id, "fresh": fresh})
+
+    async def set_session_end(self, session_id, at, reason):
+        self.sessions[session_id].update(
+            {"ended_at": at, "end_reason": reason})
+
+    async def get_session(self, session_id):
+        s = self.sessions.get(session_id)
+        if not s:
+            return None
+        return (s["session_id"], s["sensor_id"], s["attacker_ip"],
+                s["username"], s["container_id"], s["fresh"],
+                s["over_quota"], s["started_at"], s["ended_at"],
+                s["end_reason"])
+
+    def _session_order(self, sensor_id, ip):
+        rows = [s for s in self.sessions.values()
+                if s["sensor_id"] == sensor_id and s["attacker_ip"] == ip]
+        rows.sort(key=lambda s: s["started_at"] or
+                  datetime.datetime.min.replace(
+                      tzinfo=datetime.timezone.utc), reverse=True)
+        return rows
+
+    async def latest_open_session(self, sensor_id, ip):
+        for s in self._session_order(sensor_id, ip):
+            if s["ended_at"] is None:
+                return (s["session_id"],)
+        return None
+
+    async def latest_session(self, sensor_id, ip):
+        rows = self._session_order(sensor_id, ip)
+        return (rows[0]["session_id"],) if rows else None
+
+    async def add_auth_attempt(self, session_id, sensor_id, username,
+                               password, accepted, matched, at):
+        self.attempts.append((session_id, sensor_id, username, password,
+                              accepted, matched, at))
+
+    async def add_transcript(self, session_id, channel, direction, stream,
+                             seq, data, at):
+        self.transcripts.append((session_id, channel, direction, stream,
+                                 seq, data, at))
+
+    async def session_has_content(self, session_id):
+        return (any(t[0] == session_id for t in self.transcripts) or
+                any(f[0] == session_id for f in self.files))
+
+    async def session_byte_count(self, session_id):
+        total = sum(len(t[5]) for t in self.transcripts
+                    if t[0] == session_id)
+        return total + sum(f[3] for f in self.files if f[0] == session_id)
+
+    async def set_session_over_quota(self, session_id):
+        self.sessions[session_id]["over_quota"] = True
+
+    async def claim_record(self, record_id):
+        if record_id in self.applied:
+            return False
+        self.applied.add(record_id)
+        return True
+
+    async def add_blob(self, sha, path, size):
+        self.blobs.setdefault(sha, (path, size))
+
+    async def get_blob(self, sha):
+        row = self.blobs.get(sha)
+        return (sha, row[0], row[1]) if row else None
+
+    async def add_session_file(self, session_id, name, sha, size, at):
+        self.files.append((session_id, name, sha, size, at))
+
+    async def add_diff_rows(self, session_id, rows):
+        self.diffs.extend((session_id, p, k) for p, k in rows)
+
+    async def get_diff_rows(self, session_id):
+        return [(p, k) for s, p, k in self.diffs if s == session_id]
+
+    async def save_report(self, session_id, markdown, js, at):
+        self.reports[session_id] = (markdown, js, at)
+
+    async def get_report(self, session_id):
+        row = self.reports.get(session_id)
+        return (row[0], row[1]) if row else None
+
+    async def add_snapshot(self, sensor_id, ip, container_id, image):
+        self.snapshots.append((image, utcnow(), sensor_id, ip,
+                               container_id))
+
+    async def list_snapshots(self, sensor_id, ip):
+        return [(img, at) for img, at, s, i, _c in self.snapshots
+                if s == sensor_id and i == ip]
+
+    async def delete_snapshot(self, image):
+        self.snapshots = [s for s in self.snapshots if s[0] != image]
+
+    async def add_squid_hit(self, session_id, sensor_id, container_ip, at,
+                            method, url, status, size, mime):
+        self.squid.append((session_id, sensor_id, container_ip, at,
+                           method, url, status, size, mime))
+
+
+class _FakeContainer:
+    def __init__(self, cid, name):
+        self.id = cid
+        self.name = name
+        self.labels = {"carbide": "affinity"}
+
+
+class FakePodman:
+    """In-memory containers with an editable file tree per container."""
+
+    def __init__(self):
+        self.containers = {}
+        self.networks = set()
+        self.images = []
+        self._seq = 0
+
+    # -- lifecycle ------------------------------------------------------
+    def connect(self):
+        pass
+
+    def close(self):
+        pass
+
+    def ensure_network(self, name):
+        if name:
+            self.networks.add(name)
+
+    def create_container(self, name, image, user, host_port, network,
+                         environment, memory_mb, pids_limit):
+        self._seq += 1
+        cid = f"fake-c{self._seq:04d}"
+        self.containers[cid] = {
+            "name": name, "image": image, "status": "created",
+            "port": host_port, "env": dict(environment),
+            "files": {"/etc/motd": b"welcome\n",
+                      "/home/honey/.profile": b"# profile\n"},
+            "initial": None,
+            "ip": f"10.89.0.{self._seq + 1}",
+        }
+        self.containers[cid]["initial"] = dict(
+            self.containers[cid]["files"])
+        return cid
+
+    def _resolve(self, cid):
+        if cid in self.containers:
+            return cid
+        for key, value in self.containers.items():
+            if value["name"] == cid:
+                return key
+        raise KeyError(cid)
+
+    def start(self, cid):
+        self.containers[self._resolve(cid)]["status"] = "running"
+
+    def stop(self, cid, timeout=10):
+        key = self._resolve(cid)
+        if self.containers[key]["status"] == "running":
+            self.containers[key]["status"] = "exited"
+
+    def remove(self, cid):
+        self.containers.pop(self._resolve(cid), None)
+
+    def exists(self, cid):
+        try:
+            self._resolve(cid)
+            return True
+        except KeyError:
+            return False
+
+    def status(self, cid):
+        try:
+            return self.containers[self._resolve(cid)]["status"]
+        except KeyError:
+            return "missing"
+
+    def inspect(self, cid):
+        info = self.containers[self._resolve(cid)]
+        return {"NetworkSettings": {
+            "Networks": {"carbide": {"IPAddress": info["ip"]}}}}
+
+    def container_ip(self, cid):
+        try:
+            return self.containers[self._resolve(cid)]["ip"]
+        except KeyError:
+            return ""
+
+    def list_carbide(self):
+        return [_FakeContainer(cid, info["name"])
+                for cid, info in self.containers.items()]
+
+    # -- file helpers for tests ------------------------------------------
+    def write_file(self, cid, path, data: bytes):
+        self.containers[self._resolve(cid)]["files"][path] = data
+
+    def delete_file(self, cid, path):
+        self.containers[self._resolve(cid)]["files"].pop(path, None)
+
+    # -- forensics ----------------------------------------------------------
+    def diff(self, cid):
+        info = self.containers[self._resolve(cid)]
+        before, after = info["initial"], info["files"]
+        out = []
+        for path in sorted(set(before) | set(after)):
+            if path not in before:
+                out.append({"Path": path, "Kind": 1})
+            elif path not in after:
+                out.append({"Path": path, "Kind": 2})
+            elif before[path] != after[path]:
+                out.append({"Path": path, "Kind": 0})
+        return out
+
+    def get_file(self, cid, path):
+        if path.endswith("/"):
+            from carbide.server.podman_wrap import IsDirError
+            raise IsDirError(f"{path} is a directory")
+        try:
+            data = self.containers[self._resolve(cid)]["files"][path]
+        except KeyError:
+            from carbide.server.podman_wrap import PodmanError
+            raise PodmanError(f"{path}: no such file")
+        return data, {"isDir": False}
+
+    def export_to(self, cid, dest_path):
+        info = self.containers[self._resolve(cid)]
+        with tarfile.open(dest_path, "w") as tar:
+            for path, data in sorted(info["files"].items()):
+                member = tarfile.TarInfo(path.lstrip("/"))
+                member.size = len(data)
+                tar.addfile(member, io.BytesIO(data))
+
+    def commit(self, cid, image):
+        self.images.append(image)
+        return f"img-{len(self.images)}"
+
+    def remove_image(self, image):
+        if image in self.images:
+            self.images.remove(image)

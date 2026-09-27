@@ -1,0 +1,136 @@
+import unittest
+
+from carbide.common.config import validate
+from carbide.server.pool import Pool
+from carbide.server.podman_wrap import PodmanError
+from tests.fakes import FakeDatabase, FakePodman
+
+
+def make_config(**over):
+    podman = {"image": "img", "port_range_start": 22000,
+              "port_range_end": 22010}
+    affinity = {"keep_warm_minutes": 0}
+    podman.update(over.pop("podman", {}))
+    affinity.update(over.pop("affinity", {}))
+    raw = {
+        "role": "server",
+        "server": {"tokens": {"s1": "tok"}, "db_dsn": "x",
+                   "blob_dir": "y"},
+        "podman": podman,
+        "affinity": affinity,
+    }
+    raw.update(over)
+    return validate(raw)
+
+
+class PoolTest(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.db = FakeDatabase()
+        self.pod = FakePodman()
+        self.pool = Pool(self.pod, self.db, make_config())
+        await self.pool.start()
+        # FakePod listens on nothing; stub sshd readiness (tested live
+        # below against a real socket).
+        async def _ready(*args, **kwargs):
+            return None
+        self.pool._wait_sshd = _ready
+
+    def test_fresh_pool_prefilled(self):
+        self.assertEqual(len(self.pod.containers), 3)  # ref + 2 fresh
+
+    async def test_new_ip_gets_fresh_running_container(self):
+        ep = await self.pool.container_for("s1", "1.2.3.4")
+        self.assertTrue(ep["fresh"])
+        self.assertEqual(self.pod.status(ep["container_id"]), "running")
+        aff = await self.db.get_affinity("s1", "1.2.3.4")
+        self.assertEqual(aff["container_id"], ep["container_id"])
+        self.assertEqual(aff["ssh_password"], ep["ssh_password"])
+
+    async def test_same_ip_reuses_container(self):
+        first = await self.pool.container_for("s1", "1.2.3.4")
+        second = await self.pool.container_for("s1", "1.2.3.4")
+        self.assertFalse(second["fresh"])
+        self.assertEqual(first["container_id"], second["container_id"])
+
+    async def test_other_sensor_gets_own_container(self):
+        a = await self.pool.container_for("s1", "1.2.3.4")
+        b = await self.pool.container_for("s2", "1.2.3.4")
+        self.assertNotEqual(a["container_id"], b["container_id"])
+
+    async def test_restarts_stopped_container(self):
+        ep = await self.pool.container_for("s1", "1.2.3.4")
+        self.pod.stop(ep["container_id"])
+        again = await self.pool.container_for("s1", "1.2.3.4")
+        self.assertEqual(again["container_id"], ep["container_id"])
+        self.assertEqual(self.pod.status(ep["container_id"]), "running")
+
+    async def test_missing_container_reassigned(self):
+        ep = await self.pool.container_for("s1", "1.2.3.4")
+        self.pod.remove(ep["container_id"])
+        again = await self.pool.container_for("s1", "1.2.3.4")
+        self.assertTrue(again["fresh"])
+        self.assertNotEqual(again["container_id"], ep["container_id"])
+
+    async def test_keep_warm_zero_stops_on_last_end(self):
+        ep = await self.pool.container_for("s1", "1.2.3.4")
+        await self.pool.session_started("s1", "1.2.3.4")
+        await self.pool.session_started("s1", "1.2.3.4")
+        await self.pool.session_ended("s1", "1.2.3.4")
+        self.assertTrue(self.pool.is_active("s1", "1.2.3.4"))
+        await self.pool.session_ended("s1", "1.2.3.4")
+        self.assertFalse(self.pool.is_active("s1", "1.2.3.4"))
+        import asyncio
+        await asyncio.sleep(0.1)
+        self.assertEqual(self.pod.status(ep["container_id"]), "exited")
+        # filesystem (affinity) survives the stop
+        self.assertIsNotNone(await self.db.get_affinity("s1", "1.2.3.4"))
+
+    async def test_port_exhaustion(self):
+        cfg = make_config(podman={"image": "img", "port_range_start": 1,
+                                  "port_range_end": 1, "pool_size": 0})
+        db, pod = FakeDatabase(), FakePodman()
+        pool = Pool(pod, db, cfg)
+        await pool.start()
+
+        async def _ready(*args, **kwargs):
+            return None
+        pool._wait_sshd = _ready
+        await pool.container_for("s1", "9.9.9.9")
+        with self.assertRaises(PodmanError):
+            await pool.container_for("s1", "8.8.8.8")
+
+    async def test_reconcile_drops_missing_and_strays(self):
+        await self.db.set_affinity("s1", "1.1.1.1", "gone", 22005,
+                                   "pw", "")
+        stray = self.pod.create_container("carbide-stray", "img", "u",
+                                          22100, "", {}, 1, 1)
+        await self.pool._reconcile()
+        self.assertIsNone(await self.db.get_affinity("s1", "1.1.1.1"))
+        self.assertFalse(self.pod.exists(stray))
+        self.assertTrue(self.pod.exists("carbide-ref"))
+
+    async def test_wait_sshd_real_socket(self):
+        import asyncio
+        server = await asyncio.start_server(
+            lambda r, w: None, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        try:
+            await Pool._wait_sshd(self.pool, port, timeout=5.0)
+        finally:
+            server.close()
+            await server.wait_closed()
+
+    async def test_wait_sshd_timeout(self):
+        with self.assertRaises(PodmanError):
+            await Pool._wait_sshd(self.pool, 1, timeout=0.1)
+
+    async def test_remove_affinity(self):
+        ep = await self.pool.container_for("s1", "1.2.3.4")
+        await self.pool.remove_affinity("s1", "1.2.3.4")
+        self.assertFalse(self.pod.exists(ep["container_id"]))
+        self.assertIsNone(await self.db.get_affinity("s1", "1.2.3.4"))
+        self.assertNotIn(ep["ssh_port"], self.pool._used_ports)
+
+
+if __name__ == "__main__":
+    unittest.main()

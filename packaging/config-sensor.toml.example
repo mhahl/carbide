@@ -1,0 +1,24 @@
+# Example /etc/carbide/config.toml for a SENSOR host.
+role = "sensor"
+
+[sensor]
+listen_addr = "0.0.0.0"
+listen_port = 2222
+host_key_path = "/etc/carbide/ssh_host_key"  # generated if missing (ed25519)
+server_host = "carbide-server.vpn"           # reachable directly or over VPN
+server_port = 8440
+sensor_id = "sensor-01"                      # unique per sensor; must match
+token = "CHANGE-ME"                          # [server] tokens on the server
+spool_dir = "/var/lib/carbide/spool"         # durable outbox (store-and-forward)
+request_timeout_s = 10.0
+session_idle_timeout_s = 600.0
+session_max_time_s = 3600.0
+
+[auth]
+passwords = ["password", "123456", "admin", "letmein"]  # always accept
+accept_probability = 0.05   # single roll per username per connection
+max_attempts = 10           # password tries before auth is closed
+
+[logging]
+level = "INFO"
+dir = "/var/log/carbide"    # empty = stderr

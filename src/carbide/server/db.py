@@ -1,0 +1,427 @@
+"""Postgres access for carbide-server: schema, migrations, and queries.
+
+One async connection plus a lock is enough at honeypot scale and avoids an
+extra pool dependency. Every sensor record is applied idempotently through
+``applied_records``.
+"""
+import asyncio
+import datetime
+import logging
+
+import psycopg
+
+log = logging.getLogger("carbide.server.db")
+
+
+class DatabaseClosedError(Exception):
+    """Raised when a query is attempted after :meth:`Database.close`."""
+
+MIGRATIONS = [
+    (1, """
+    CREATE TABLE IF NOT EXISTS schema_version (version INT PRIMARY KEY);
+    CREATE TABLE IF NOT EXISTS sensors (
+        sensor_id TEXT PRIMARY KEY,
+        first_seen TIMESTAMPTZ DEFAULT now(),
+        last_seen TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS affinities (
+        sensor_id TEXT NOT NULL,
+        attacker_ip TEXT NOT NULL,
+        container_id TEXT NOT NULL,
+        ssh_port INT NOT NULL,
+        ssh_password TEXT NOT NULL,
+        container_ip TEXT DEFAULT '',
+        has_activity BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        last_session_end TIMESTAMPTZ,
+        PRIMARY KEY (sensor_id, attacker_ip));
+    CREATE TABLE IF NOT EXISTS sessions (
+        session_id TEXT PRIMARY KEY,
+        sensor_id TEXT NOT NULL,
+        attacker_ip TEXT NOT NULL,
+        username TEXT DEFAULT '',
+        container_id TEXT DEFAULT '',
+        fresh BOOLEAN,
+        over_quota BOOLEAN DEFAULT FALSE,
+        started_at TIMESTAMPTZ,
+        ended_at TIMESTAMPTZ,
+        end_reason TEXT DEFAULT '');
+    CREATE INDEX IF NOT EXISTS sessions_affinity_idx
+        ON sessions (sensor_id, attacker_ip, started_at);
+    CREATE TABLE IF NOT EXISTS auth_attempts (
+        id BIGSERIAL PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        sensor_id TEXT NOT NULL,
+        username TEXT DEFAULT '',
+        password TEXT DEFAULT '',
+        accepted BOOLEAN NOT NULL,
+        matched_list BOOLEAN NOT NULL,
+        at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS transcripts (
+        id BIGSERIAL PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        channel TEXT DEFAULT '',
+        direction TEXT DEFAULT '',
+        stream TEXT DEFAULT '',
+        seq INT NOT NULL,
+        data BYTEA NOT NULL,
+        at TIMESTAMPTZ NOT NULL);
+    CREATE INDEX IF NOT EXISTS transcripts_session_idx
+        ON transcripts (session_id, id);
+    CREATE TABLE IF NOT EXISTS blobs (
+        sha256 TEXT PRIMARY KEY,
+        path TEXT NOT NULL,
+        size BIGINT NOT NULL,
+        first_seen TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS session_files (
+        id BIGSERIAL PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        blob_sha TEXT,
+        size BIGINT NOT NULL,
+        at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS diffs (
+        id BIGSERIAL PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        path TEXT NOT NULL,
+        kind TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS reports (
+        session_id TEXT PRIMARY KEY,
+        markdown TEXT NOT NULL,
+        json TEXT NOT NULL,
+        at TIMESTAMPTZ NOT NULL);
+    CREATE TABLE IF NOT EXISTS snapshots (
+        id BIGSERIAL PRIMARY KEY,
+        sensor_id TEXT NOT NULL,
+        attacker_ip TEXT NOT NULL,
+        container_id TEXT NOT NULL,
+        image TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS squid_hits (
+        id BIGSERIAL PRIMARY KEY,
+        session_id TEXT DEFAULT '',
+        sensor_id TEXT DEFAULT '',
+        container_ip TEXT DEFAULT '',
+        at TIMESTAMPTZ NOT NULL,
+        method TEXT DEFAULT '',
+        url TEXT DEFAULT '',
+        status INT NOT NULL,
+        bytes BIGINT NOT NULL,
+        mime TEXT DEFAULT '');
+    CREATE TABLE IF NOT EXISTS applied_records (
+        record_id TEXT PRIMARY KEY,
+        applied_at TIMESTAMPTZ DEFAULT now());
+    """),
+]
+
+
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
+class Database:
+    def __init__(self, dsn: str):
+        self._dsn = dsn
+        self._conn = None
+        self._lock = asyncio.Lock()
+        self._closed = False
+
+    async def connect(self):
+        self._conn = await psycopg.AsyncConnection.connect(
+            self._dsn, autocommit=False)
+        self._closed = False
+        await self.migrate()
+
+    async def close(self):
+        # Take the lock so in-flight queries finish before the connection
+        # is torn down; afterwards the guard fails fast instead of touching
+        # a closed libpq handle (use-after-free segfaults the C accel).
+        async with self._lock:
+            if self._conn is not None:
+                await self._conn.close()
+                self._conn = None
+            self._closed = True
+
+    def _guard(self):
+        if self._closed or self._conn is None:
+            raise DatabaseClosedError("database is closed")
+
+    async def migrate(self):
+        async with self._lock:
+            self._guard()
+            async with self._conn.cursor() as cur:
+                await cur.execute(
+                    "CREATE TABLE IF NOT EXISTS schema_version "
+                    "(version INT PRIMARY KEY)")
+                await cur.execute("SELECT version FROM schema_version")
+                have = {row[0] for row in await cur.fetchall()}
+                for version, sql in MIGRATIONS:
+                    if version in have:
+                        continue
+                    await cur.execute(sql)
+                    await cur.execute(
+                        "INSERT INTO schema_version (version) VALUES (%s)",
+                        (version,))
+                    log.info("applied db migration %d", version)
+            await self._conn.commit()
+
+    async def _exec(self, sql, params=(), fetch=None):
+        async with self._lock:
+            self._guard()
+            async with self._conn.cursor() as cur:
+                await cur.execute(sql, params)
+                result = None
+                if fetch == "one":
+                    result = await cur.fetchone()
+                elif fetch == "all":
+                    result = await cur.fetchall()
+            await self._conn.commit()
+            return result
+
+    # -- idempotency ---------------------------------------------------
+    async def claim_record(self, record_id: str) -> bool:
+        """True when this record was never applied before."""
+        async with self._lock:
+            self._guard()
+            async with self._conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO applied_records (record_id) VALUES (%s) "
+                    "ON CONFLICT DO NOTHING RETURNING record_id",
+                    (record_id,))
+                row = await cur.fetchone()
+            await self._conn.commit()
+            return row is not None
+
+    # -- sensors / affinity --------------------------------------------
+    async def note_sensor(self, sensor_id: str):
+        await self._exec(
+            "INSERT INTO sensors (sensor_id) VALUES (%s) "
+            "ON CONFLICT (sensor_id) DO UPDATE SET last_seen = now()",
+            (sensor_id,))
+
+    async def get_affinity(self, sensor_id: str, ip: str):
+        row = await self._exec(
+            "SELECT sensor_id, attacker_ip, container_id, ssh_port, "
+            "ssh_password, container_ip, has_activity, created_at, "
+            "last_session_end FROM affinities "
+            "WHERE sensor_id = %s AND attacker_ip = %s",
+            (sensor_id, ip), fetch="one")
+        return self._affinity_row(row) if row else None
+
+    async def get_affinity_by_container_ip(self, container_ip: str):
+        row = await self._exec(
+            "SELECT sensor_id, attacker_ip, container_id, ssh_port, "
+            "ssh_password, container_ip, has_activity, created_at, "
+            "last_session_end FROM affinities WHERE container_ip = %s "
+            "ORDER BY created_at DESC LIMIT 1",
+            (container_ip,), fetch="one")
+        return self._affinity_row(row) if row else None
+
+    @staticmethod
+    def _affinity_row(row):
+        keys = ("sensor_id", "attacker_ip", "container_id", "ssh_port",
+                "ssh_password", "container_ip", "has_activity",
+                "created_at", "last_session_end")
+        return dict(zip(keys, row))
+
+    async def set_affinity(self, sensor_id: str, ip: str, container_id: str,
+                           ssh_port: int, ssh_password: str,
+                           container_ip: str):
+        await self._exec(
+            "INSERT INTO affinities (sensor_id, attacker_ip, container_id, "
+            "ssh_port, ssh_password, container_ip) VALUES (%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (sensor_id, attacker_ip) DO UPDATE SET "
+            "container_id = EXCLUDED.container_id, "
+            "ssh_port = EXCLUDED.ssh_port, "
+            "ssh_password = EXCLUDED.ssh_password, "
+            "container_ip = EXCLUDED.container_ip",
+            (sensor_id, ip, container_id, ssh_port, ssh_password,
+             container_ip))
+
+    async def set_affinity_activity(self, sensor_id: str, ip: str,
+                                    active: bool):
+        await self._exec(
+            "UPDATE affinities SET has_activity = %s "
+            "WHERE sensor_id = %s AND attacker_ip = %s",
+            (active, sensor_id, ip))
+
+    async def touch_affinity_end(self, sensor_id: str, ip: str):
+        await self._exec(
+            "UPDATE affinities SET last_session_end = now() "
+            "WHERE sensor_id = %s AND attacker_ip = %s",
+            (sensor_id, ip))
+
+    async def list_affinities(self):
+        rows = await self._exec(
+            "SELECT sensor_id, attacker_ip, container_id, ssh_port, "
+            "ssh_password, container_ip, has_activity, created_at, "
+            "last_session_end FROM affinities ORDER BY last_session_end "
+            "NULLS FIRST", fetch="all")
+        return [self._affinity_row(r) for r in rows]
+
+    async def delete_affinity(self, sensor_id: str, ip: str):
+        await self._exec(
+            "DELETE FROM affinities WHERE sensor_id = %s AND attacker_ip = %s",
+            (sensor_id, ip))
+
+    async def ports_in_use(self) -> set:
+        rows = await self._exec("SELECT ssh_port FROM affinities",
+                                fetch="all")
+        return {r[0] for r in rows}
+
+    # -- sessions ------------------------------------------------------
+    async def ensure_session(self, session_id: str, sensor_id: str, ip: str):
+        await self._exec(
+            "INSERT INTO sessions (session_id, sensor_id, attacker_ip) "
+            "VALUES (%s, %s, %s) ON CONFLICT DO NOTHING",
+            (session_id, sensor_id, ip))
+
+    async def set_session_started(self, session_id: str, username: str, at,
+                                  ip=None):
+        if ip is None:
+            await self._exec(
+                "UPDATE sessions SET username = %s, started_at = %s "
+                "WHERE session_id = %s", (username, at, session_id))
+        else:
+            await self._exec(
+                "UPDATE sessions SET username = %s, started_at = %s, "
+                "attacker_ip = %s WHERE session_id = %s",
+                (username, at, ip, session_id))
+
+    async def set_session_container(self, session_id: str, container_id: str,
+                                    fresh: bool):
+        await self._exec(
+            "UPDATE sessions SET container_id = %s, fresh = %s "
+            "WHERE session_id = %s", (container_id, fresh, session_id))
+
+    async def set_session_end(self, session_id: str, at, reason: str):
+        await self._exec(
+            "UPDATE sessions SET ended_at = %s, end_reason = %s "
+            "WHERE session_id = %s", (at, reason, session_id))
+
+    async def get_session(self, session_id: str):
+        return await self._exec(
+            "SELECT session_id, sensor_id, attacker_ip, username, "
+            "container_id, fresh, over_quota, started_at, ended_at, "
+            "end_reason FROM sessions WHERE session_id = %s",
+            (session_id,), fetch="one")
+
+    async def latest_open_session(self, sensor_id: str, ip: str):
+        return await self._exec(
+            "SELECT session_id FROM sessions WHERE sensor_id = %s AND "
+            "attacker_ip = %s AND ended_at IS NULL "
+            "ORDER BY started_at DESC NULLS LAST LIMIT 1",
+            (sensor_id, ip), fetch="one")
+
+    async def latest_session(self, sensor_id: str, ip: str):
+        return await self._exec(
+            "SELECT session_id FROM sessions WHERE sensor_id = %s AND "
+            "attacker_ip = %s ORDER BY started_at DESC NULLS LAST LIMIT 1",
+            (sensor_id, ip), fetch="one")
+
+    async def add_auth_attempt(self, session_id, sensor_id, username,
+                               password, accepted, matched, at):
+        await self._exec(
+            "INSERT INTO auth_attempts (session_id, sensor_id, username, "
+            "password, accepted, matched_list, at) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (session_id, sensor_id, username, password, accepted,
+             matched, at))
+
+    async def add_transcript(self, session_id, channel, direction, stream,
+                             seq, data: bytes, at):
+        await self._exec(
+            "INSERT INTO transcripts (session_id, channel, direction, "
+            "stream, seq, data, at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (session_id, channel, direction, stream, seq, data, at))
+
+    async def session_has_content(self, session_id: str) -> bool:
+        row = await self._exec(
+            "SELECT 1 FROM transcripts WHERE session_id = %s LIMIT 1",
+            (session_id,), fetch="one")
+        if row:
+            return True
+        row = await self._exec(
+            "SELECT 1 FROM session_files WHERE session_id = %s LIMIT 1",
+            (session_id,), fetch="one")
+        return row is not None
+
+    async def session_byte_count(self, session_id: str) -> int:
+        row = await self._exec(
+            "SELECT COALESCE(SUM(octet_length(data)), 0) FROM transcripts "
+            "WHERE session_id = %s", (session_id,), fetch="one")
+        total = row[0] if row else 0
+        row = await self._exec(
+            "SELECT COALESCE(SUM(size), 0) FROM session_files "
+            "WHERE session_id = %s", (session_id,), fetch="one")
+        return total + (row[0] if row else 0)
+
+    async def set_session_over_quota(self, session_id: str):
+        await self._exec(
+            "UPDATE sessions SET over_quota = TRUE WHERE session_id = %s",
+            (session_id,))
+
+    # -- blobs / files / diffs / reports -------------------------------
+    async def add_blob(self, sha: str, path: str, size: int):
+        await self._exec(
+            "INSERT INTO blobs (sha256, path, size) VALUES (%s,%s,%s) "
+            "ON CONFLICT DO NOTHING", (sha, path, size))
+
+    async def get_blob(self, sha: str):
+        return await self._exec(
+            "SELECT sha256, path, size FROM blobs WHERE sha256 = %s",
+            (sha,), fetch="one")
+
+    async def add_session_file(self, session_id, name, sha, size, at):
+        await self._exec(
+            "INSERT INTO session_files (session_id, name, blob_sha, size, "
+            "at) VALUES (%s,%s,%s,%s,%s)",
+            (session_id, name, sha, size, at))
+
+    async def add_diff_rows(self, session_id, rows):
+        for path, kind in rows:
+            await self._exec(
+                "INSERT INTO diffs (session_id, path, kind) "
+                "VALUES (%s,%s,%s)", (session_id, path, kind))
+
+    async def get_diff_rows(self, session_id):
+        return await self._exec(
+            "SELECT path, kind FROM diffs WHERE session_id = %s ORDER BY "
+            "path", (session_id,), fetch="all")
+
+    async def save_report(self, session_id, markdown: str, js: str, at):
+        await self._exec(
+            "INSERT INTO reports (session_id, markdown, json, at) "
+            "VALUES (%s,%s,%s,%s) ON CONFLICT (session_id) DO UPDATE SET "
+            "markdown = EXCLUDED.markdown, json = EXCLUDED.json, "
+            "at = EXCLUDED.at",
+            (session_id, markdown, js, at))
+
+    async def get_report(self, session_id):
+        return await self._exec(
+            "SELECT markdown, json FROM reports WHERE session_id = %s",
+            (session_id,), fetch="one")
+
+    # -- snapshots / squid ---------------------------------------------
+    async def add_snapshot(self, sensor_id, ip, container_id, image):
+        await self._exec(
+            "INSERT INTO snapshots (sensor_id, attacker_ip, container_id, "
+            "image) VALUES (%s,%s,%s,%s)",
+            (sensor_id, ip, container_id, image))
+
+    async def list_snapshots(self, sensor_id, ip):
+        return await self._exec(
+            "SELECT image, created_at FROM snapshots "
+            "WHERE sensor_id = %s AND attacker_ip = %s "
+            "ORDER BY created_at", (sensor_id, ip), fetch="all")
+
+    async def delete_snapshot(self, image: str):
+        await self._exec("DELETE FROM snapshots WHERE image = %s", (image,))
+
+    async def add_squid_hit(self, session_id, sensor_id, container_ip, at,
+                            method, url, status, size, mime):
+        await self._exec(
+            "INSERT INTO squid_hits (session_id, sensor_id, container_ip, "
+            "at, method, url, status, bytes, mime) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            (session_id, sensor_id, container_ip, at, method, url,
+             status, size, mime))

@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: carbide
+Version: 0.1.0
+Summary: Carbide SSH honeypot fleet: lightweight sensors plus a central server
+Requires-Python: >=3.11
+Requires-Dist: asyncssh>=2.0
+Requires-Dist: podman>=5.0
+Requires-Dist: psycopg[binary]>=3.1

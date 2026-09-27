@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "carbide"
+version = "0.1.0"
+description = "Carbide SSH honeypot fleet: lightweight sensors plus a central server"
+requires-python = ">=3.11"
+# NOTE: psycopg[c] (system libpq), never psycopg[binary]: the binary wheel
+# bundles a second OpenSSL that corrupts the heap when loaded alongside the
+# system OpenSSL used by asyncssh/requests. Server hosts need libpq.
+dependencies = [
+    "asyncssh>=2.0",
+    "podman>=5.0",
+    "psycopg[c]>=3.1",
+]
+
+[project.scripts]
+carbide-sensor = "carbide.sensor.__main__:main"
+carbide-server = "carbide.server.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

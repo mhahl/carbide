@@ -1,0 +1,308 @@
+"""carbide-server control API: authenticated JSON-lines TCP.
+
+Sensors authenticate with per-sensor tokens and then (a) resolve attacker IPs
+to containers and (b) stream evidence records. Sensor input is untrusted: the
+connection's sensor identity overrides anything in the records, every record
+applies at most once, and malformed records are refused (the sensor drops
+refused records so one poison record cannot wedge the spool).
+"""
+import asyncio
+import datetime
+import logging
+
+from ..common import protocol
+from ..common.protocol import BlobReassembler
+from ..common.util import b64d
+from .podman_wrap import PodmanError
+
+log = logging.getLogger("carbide.server.api")
+
+
+class RecordError(Exception):
+    pass
+
+
+def parse_at(value):
+    try:
+        return datetime.datetime.fromisoformat(str(value))
+    except (ValueError, TypeError):
+        return datetime.datetime.now(datetime.timezone.utc)
+
+
+def _need_str(record: dict, key: str, limit: int = 4096) -> str:
+    value = record.get(key)
+    if not isinstance(value, str) or len(value) > limit:
+        raise RecordError(f"bad {key}")
+    return value
+
+
+class ServerAPI:
+    def __init__(self, db, pool, forensics, blobstore, cfg):
+        scfg = cfg.section("server")
+        self._addr = scfg["api_addr"]
+        self._port = scfg["api_port"]
+        self._tokens = dict(scfg["tokens"])
+        self._db = db
+        self._pool = pool
+        self._forensics = forensics
+        self._blobs = blobstore
+        self._session_max = cfg.get("quotas.session_max_bytes",
+                                    100 * 1024 * 1024)
+        self._asm = BlobReassembler()
+        self._server = None
+        self._handlers = set()
+
+    async def run(self):
+        self._server = await asyncio.start_server(
+            self._handle, self._addr, self._port)
+        log.info("server api on %s:%s", self._addr, self._port)
+        async with self._server:
+            try:
+                await self._server.serve_forever()
+            finally:
+                # Drain per-connection handlers before returning: a handler
+                # using the database after close() segfaults the C accel.
+                handlers = list(self._handlers)
+                for task in handlers:
+                    task.cancel()
+                if handlers:
+                    await asyncio.gather(*handlers,
+                                         return_exceptions=True)
+
+    async def _handle(self, reader, writer):
+        task = asyncio.current_task()
+        self._handlers.add(task)
+        try:
+            await self._serve_connection(reader, writer)
+        finally:
+            self._handlers.discard(task)
+
+    async def _serve_connection(self, reader, writer):
+        sensor_id = None
+        peer = writer.get_extra_info("peername")
+        try:
+            while True:
+                line = await reader.readline()
+                if not line:
+                    return
+                try:
+                    msg = protocol.decode(line)
+                except protocol.ProtocolError:
+                    continue
+                req_id = msg.get("id")
+                if not req_id:
+                    continue
+                mtype = msg.get("type")
+                try:
+                    if mtype == "hello":
+                        sensor_id = await self._hello(msg)
+                        reply = protocol.new_reply(req_id, ok=True)
+                    elif sensor_id is None:
+                        reply = protocol.new_reply(
+                            req_id, ok=False, error="hello first")
+                    elif mtype == "ping":
+                        reply = protocol.new_reply(req_id, ok=True)
+                    elif mtype == "container_for":
+                        endpoint = await self._container_for(sensor_id, msg)
+                        reply = protocol.new_reply(req_id, ok=True,
+                                                   **endpoint)
+                    elif mtype == "record":
+                        await self._record(sensor_id, msg)
+                        reply = protocol.new_reply(req_id, ok=True)
+                    else:
+                        reply = protocol.new_reply(
+                            req_id, ok=False, error="unknown type")
+                except RecordError as exc:
+                    reply = protocol.new_reply(
+                        req_id, ok=False, error=str(exc))
+                except PodmanError as exc:
+                    reply = protocol.new_reply(
+                        req_id, ok=False, error=str(exc))
+                except Exception as exc:  # never drop the link on one msg
+                    log.warning("request failed: %s", exc)
+                    reply = protocol.new_reply(
+                        req_id, ok=False, error="internal error")
+                writer.write(protocol.encode(reply))
+                await writer.drain()
+                if mtype == "hello" and not reply.get("ok"):
+                    return
+                if sensor_id is None and mtype != "hello":
+                    return
+        except (ConnectionResetError, BrokenPipeError):
+            pass
+        finally:
+            try:
+                writer.close()
+            except Exception:
+                pass
+            log.debug("api connection from %s closed", peer)
+
+    async def _hello(self, msg: dict) -> str:
+        sensor_id = msg.get("sensor_id")
+        token = msg.get("token")
+        expected = self._tokens.get(sensor_id) if isinstance(
+            sensor_id, str) else None
+        if expected is None or not isinstance(token, str) or \
+                not protocol.tokens_equal(token, expected):
+            raise RecordError("bad sensor credentials")
+        await self._db.note_sensor(sensor_id)
+        log.info("sensor %s linked", sensor_id)
+        return sensor_id
+
+    async def _container_for(self, sensor_id: str, msg: dict) -> dict:
+        ip = msg.get("attacker_ip")
+        if not isinstance(ip, str) or not ip or len(ip) > 64:
+            raise RecordError("bad attacker_ip")
+        return await self._pool.container_for(sensor_id, ip)
+
+    async def _record(self, sensor_id: str, msg: dict):
+        record = msg.get("record")
+        if not isinstance(record, dict):
+            raise RecordError("record must be an object")
+        record_id = record.get("record_id")
+        kind = record.get("kind")
+        session_id = record.get("session_id")
+        if not all(isinstance(v, str) and v for v in
+                   (record_id, kind, session_id)):
+            raise RecordError("record needs record_id/kind/session_id")
+        if len(record_id) > 128 or len(session_id) > 128:
+            raise RecordError("record/session id too long")
+        if not await self._db.claim_record(record_id):
+            return  # duplicate delivery; already applied
+        handler = {
+            protocol.KIND_SESSION_START: self._r_session_start,
+            protocol.KIND_SESSION_CONTAINER: self._r_session_container,
+            protocol.KIND_SESSION_END: self._r_session_end,
+            protocol.KIND_AUTH_ATTEMPT: self._r_auth,
+            protocol.KIND_TRANSCRIPT: self._r_transcript,
+            protocol.KIND_BLOB_META: self._r_blob_meta,
+            protocol.KIND_BLOB_CHUNK: self._r_blob_chunk,
+        }.get(kind)
+        if handler is None:
+            raise RecordError(f"unknown kind {kind}")
+        await handler(sensor_id, session_id, record)
+
+    async def _r_session_start(self, sensor_id, session_id, record):
+        ip = _need_str(record, "attacker_ip", 64)
+        username = record.get("username", "")
+        if not isinstance(username, str) or len(username) > 256:
+            raise RecordError("bad username")
+        await self._db.ensure_session(session_id, sensor_id, ip)
+        await self._db.set_session_started(
+            session_id, username, parse_at(record.get("at")), ip)
+        await self._pool.session_started(sensor_id, ip)
+
+    async def _r_session_container(self, sensor_id, session_id, record):
+        cid = _need_str(record, "container_id", 128)
+        fresh = bool(record.get("fresh"))
+        await self._db.ensure_session(session_id, sensor_id, "")
+        await self._db.set_session_container(session_id, cid, fresh)
+
+    async def _r_session_end(self, sensor_id, session_id, record):
+        reason = record.get("reason", "")
+        if not isinstance(reason, str) or len(reason) > 512:
+            raise RecordError("bad reason")
+        await self._db.ensure_session(session_id, sensor_id, "")
+        await self._db.set_session_end(
+            session_id, parse_at(record.get("at")), reason)
+        session = await self._db.get_session(session_id)
+        if session is None:
+            return
+        ip, container_id = session[2], session[4]
+        if ip:
+            await self._pool.session_ended(sensor_id, ip)
+        if container_id:
+            asyncio.create_task(self._collect(
+                sensor_id, ip, session_id, container_id, reason))
+
+    async def _collect(self, sensor_id, ip, session_id, container_id,
+                       reason):
+        try:
+            await self._forensics.collect(
+                sensor_id=sensor_id, attacker_ip=ip, session_id=session_id,
+                container_id=container_id, reason=reason or "session end")
+        except Exception as exc:
+            log.warning("forensics for %s failed: %s", session_id, exc)
+
+    async def _r_auth(self, sensor_id, session_id, record):
+        username = record.get("username", "")
+        password = record.get("password", "")
+        if not isinstance(username, str) or len(username) > 256:
+            raise RecordError("bad username")
+        if not isinstance(password, str) or len(password) > 1024:
+            raise RecordError("bad password")
+        await self._db.ensure_session(session_id, sensor_id, "")
+        await self._db.add_auth_attempt(
+            session_id, sensor_id, username, password,
+            bool(record.get("accepted")), bool(record.get("matched_list")),
+            parse_at(record.get("at")))
+
+    async def _over_quota(self, session_id, extra: int) -> bool:
+        try:
+            used = await self._db.session_byte_count(session_id)
+        except Exception:
+            return False
+        if used + extra > self._session_max:
+            await self._db.set_session_over_quota(session_id)
+            return True
+        return False
+
+    async def _r_transcript(self, sensor_id, session_id, record):
+        for key in ("channel", "direction", "stream"):
+            _need_str(record, key, 64)
+        seq = record.get("seq", 0)
+        if not isinstance(seq, int) or seq < 0:
+            raise RecordError("bad seq")
+        try:
+            data = b64d(record.get("data_b64", ""))
+        except Exception:
+            raise RecordError("bad data_b64")
+        await self._db.ensure_session(session_id, sensor_id, "")
+        if await self._over_quota(session_id, len(data)):
+            return
+        await self._db.add_transcript(
+            session_id, record["channel"], record["direction"],
+            record["stream"], seq, data, parse_at(record.get("at")))
+
+    async def _r_blob_meta(self, sensor_id, session_id, record):
+        _need_str(record, "blob_sha", 64)
+        _need_str(record, "name", 1024)
+        size = record.get("size", 0)
+        if not isinstance(size, int) or size < 0:
+            raise RecordError("bad size")
+        await self._db.ensure_session(session_id, sensor_id, "")
+
+    async def _r_blob_chunk(self, sensor_id, session_id, record):
+        sha = _need_str(record, "blob_sha", 64)
+        name = _need_str(record, "name", 1024)
+        seq = record.get("seq", 0)
+        last = record.get("last", False)
+        if not isinstance(seq, int) or seq < 0 or not isinstance(last, bool):
+            raise RecordError("bad chunk framing")
+        try:
+            data = b64d(record.get("data_b64", ""))
+        except Exception:
+            raise RecordError("bad data_b64")
+        await self._db.ensure_session(session_id, sensor_id, "")
+        try:
+            blob = self._asm.add(sha, seq, last, data)
+        except protocol.ProtocolError as exc:
+            self._asm.discard(sha)
+            raise RecordError(str(exc))
+        if blob is None:
+            return
+        at = parse_at(record.get("at"))
+        if await self._over_quota(session_id, len(blob)):
+            await self._db.add_session_file(session_id, name, None,
+                                            len(blob), at)
+            return
+        try:
+            ref = self._blobs.put_bytes(blob)
+        except Exception:
+            await self._db.set_session_over_quota(session_id)
+            await self._db.add_session_file(session_id, name, None,
+                                            len(blob), at)
+            return
+        await self._db.add_blob(ref.sha256, ref.path, ref.size)
+        await self._db.add_session_file(session_id, name, ref.sha256,
+                                        ref.size, at)

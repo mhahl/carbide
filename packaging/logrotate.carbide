@@ -1,0 +1,23 @@
+# logrotate for carbide (install as /etc/logrotate.d/carbide)
+/var/log/carbide/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}
+
+/var/log/squid/access.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    # Squid reopens on USR1 / -k rotate; missingok keeps test hosts happy.
+    postrotate
+        /usr/sbin/squid -k rotate >/dev/null 2>&1 || true
+    endscript
+}

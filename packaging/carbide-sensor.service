@@ -1,0 +1,22 @@
+[Unit]
+Description=Carbide honeypot sensor (SSH front door)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=carbide-sensor
+Group=carbide-sensor
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ExecStart=/usr/local/bin/carbide-sensor -c /etc/carbide/config.toml
+Restart=on-failure
+RestartSec=5
+# spool + logs
+StateDirectory=carbide/spool
+LogsDirectory=carbide
+ReadOnlyPaths=/etc/carbide
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

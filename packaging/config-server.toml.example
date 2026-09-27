@@ -1,0 +1,47 @@
+# Example /etc/carbide/config.toml for the SERVER host.
+role = "server"
+
+[server]
+api_addr = "0.0.0.0"        # bind the VPN interface in production
+api_port = 8440
+tokens = { sensor-01 = "CHANGE-ME" }  # one token per sensor id
+db_dsn = "postgresql://carbide:CHANGE-ME@127.0.0.1:5432/carbide"
+blob_dir = "/var/lib/carbide/blobs"   # local disk or NFS mount (D10)
+
+[podman]
+socket = "unix:///run/podman/podman.sock"
+image = "carbide-honeypot:latest"
+port_range_start = 22000
+port_range_end = 22100   # needs >= max_containers + pool_size + 1
+network = "carbide"      # created if missing; "" = default network
+container_user = "honey" # must match the image's session user
+memory_mb = 256
+pids_limit = 128
+pool_size = 2            # pre-warmed fresh containers
+ssh_host = ""            # address sensors use for containers; "" = api_addr
+
+[affinity]
+keep_warm_minutes = 10   # running idle grace after last session, then stop
+max_containers = 200     # LRU backstop
+idle_ttl_active_days = 30
+idle_ttl_inactive_hours = 24
+snapshot_retention = 10  # per-affinity image snapshots kept
+commit_per_session = true
+
+[forensics]
+max_file_bytes = 1048576  # per-file content cap in reports
+include_full_export = false  # eviction finals always attempt one
+
+[squid]
+enabled = true
+mode = "transparent"     # or "explicit" (needs explicit_proxy)
+explicit_proxy = ""
+log_path = "/var/log/squid/access.log"
+
+[quotas]
+blob_max_bytes = 10737418240   # 10 GiB blob store cap
+session_max_bytes = 104857600  # 100 MiB evidence cap per session
+
+[logging]
+level = "INFO"
+dir = "/var/log/carbide"

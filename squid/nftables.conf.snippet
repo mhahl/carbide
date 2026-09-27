@@ -1,0 +1,46 @@
+# nftables snippet for the podman host (transparent Squid mode).
+# Apply AFTER reviewing for your interface names; this is documentation, not
+# run automatically by carbide.
+#
+# Assumptions:
+#   - containers live on 10.88.0.0/16 (adjust to your carbide network)
+#   - squid runs on this host, intercept ports 3129 (http) / 3130 (https)
+#   - site DNS resolver for containers: $RESOLVER (containers must resolve
+#     names locally in transparent mode; the proxy cannot resolve for them)
+#
+# What this does:
+#   - redirects container-bound tcp/80+443 into squid (transparent)
+#   - allows udp/53 ONLY to the site resolver (DNS tunneling elsewhere dies)
+#   - drops all other direct egress from containers
+#
+# NOTE the residual DNS-tunneling caveat: in transparent mode the container's
+# own stub resolver talks to $RESOLVER, so exfiltration via that resolver is
+# possible. If that is unacceptable, run squid in explicit mode instead
+# ([squid] mode="explicit"), where containers get no DNS at all and Squid is
+# the only resolver.
+
+table inet carbide_egress {
+    set container_nets {
+        type ipv4_addr
+        flags interval
+        elements = { 10.88.0.0/16 }
+    }
+
+    chain prerouting {
+        type nat hook prerouting priority dstnat; policy accept;
+        ip saddr @container_nets tcp dport 80 redirect to :3129
+        ip saddr @container_nets tcp dport 443 redirect to :3130
+    }
+
+    chain forward_containers {
+        # DNS only to the site resolver (set $RESOLVER when applying):
+        #   ip saddr @container_nets udp dport 53 ip daddr $RESOLVER accept
+        # Everything else direct is dropped; web goes via the proxy above.
+        ip saddr @container_nets ct state established,related accept
+        ip saddr @container_nets drop
+    }
+}
+# Hook forward_containers into your forward path for the container bridge,
+# or translate to your firewalld/iptables setup. Verify with:
+#   podman run --rm alpine sh -c 'wget -O- http://example.com | head -1'
+# from a test container on the carbide network.
