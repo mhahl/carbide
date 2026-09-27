@@ -1,0 +1,264 @@
+---
+- name: Check required variables
+  ansible.builtin.assert:
+    that:
+      - carbide_sensor_tokens is defined and carbide_sensor_tokens | length > 0
+      - carbide_db_password is defined and carbide_db_password | length > 0
+      - carbide_squid_mode in ["transparent", "explicit"]
+      - carbide_squid_mode != "transparent" or carbide_nft_resolver is defined
+    fail_msg: >-
+      Set carbide_sensor_tokens, carbide_db_password (use vault), and
+      carbide_nft_resolver when squid mode is transparent.
+    quiet: true
+
+- name: Install server packages
+  ansible.builtin.dnf:
+    name:
+      - python3-pip
+      - postgresql-server
+      - squid
+      - openssl
+      - podman
+      - openssh-clients
+      - libpq
+      - logrotate
+      - firewalld
+    state: present
+
+- name: Bundle carbide source on the control node
+  ansible.builtin.shell:
+    cmd: |
+      tar -czf /tmp/carbide-src.tar.gz \
+        --exclude='./.venv' --exclude='./.git' \
+        --exclude='*/__pycache__' \
+        --transform='s,^./,carbide-src/,' \
+        -C "{{ carbide_src }}" .
+    changed_when: true
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Create carbide source parent
+  ansible.builtin.file:
+    path: /opt/carbide
+    state: directory
+    mode: "0755"
+
+- name: Refresh carbide source on the target
+  ansible.builtin.shell:
+    cmd: |
+      set -e
+      rm -rf /opt/carbide/src /opt/carbide/.incoming
+      mkdir -p /opt/carbide/.incoming
+      tar -xzf /tmp/carbide-src.tar.gz -C /opt/carbide/.incoming
+      mv /opt/carbide/.incoming/carbide-src /opt/carbide/src
+      rm -rf /opt/carbide/.incoming
+    changed_when: true
+
+- name: Install carbide into system Python
+  ansible.builtin.pip:
+    name: "{{ carbide_src_dir }}"
+    executable: pip3
+    extra_args: "{{ carbide_pip_extra_args }}"
+    state: "{{ carbide_force_reinstall | ternary('forcereinstall', 'present') }}"
+
+- name: Initialize postgres data directory
+  ansible.builtin.command:
+    cmd: /usr/sbin/postgresql-setup --initdb
+    creates: /var/lib/pgsql/data/PG_VERSION
+
+- name: Enable and start postgres
+  ansible.builtin.systemd:
+    name: postgresql
+    enabled: true
+    state: started
+
+- name: Create carbide database role
+  ansible.builtin.shell:
+    cmd: psql -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ carbide_db_user }}'" | grep -q 1 ||
+      psql -c "CREATE USER \"{{ carbide_db_user }}\" WITH PASSWORD '{{ carbide_db_password }}'"
+  become_user: postgres
+  changed_when: false
+  no_log: true
+
+- name: Create carbide database
+  ansible.builtin.shell:
+    cmd: psql -tc "SELECT 1 FROM pg_database WHERE datname='{{ carbide_db_name }}'" | grep -q 1 ||
+      psql -c "CREATE DATABASE \"{{ carbide_db_name }}\" OWNER \"{{ carbide_db_user }}\""
+  become_user: postgres
+  changed_when: false
+
+- name: Enable podman API socket
+  ansible.builtin.systemd:
+    name: podman.socket
+    enabled: true
+    state: started
+
+- name: Create carbide container network
+  ansible.builtin.shell:
+    cmd: podman network exists {{ carbide_podman_network }} ||
+      podman network create --subnet {{ carbide_container_subnet }}
+      --gateway {{ carbide_container_gateway }} {{ carbide_podman_network }}
+  changed_when: false
+
+- name: Check for honeypot image
+  ansible.builtin.shell:
+    cmd: podman image exists {{ carbide_podman_image }}
+  register: carbide_image_check
+  changed_when: false
+  failed_when: false
+
+- name: Build honeypot image
+  ansible.builtin.shell:
+    cmd: podman build -t {{ carbide_podman_image }} {{ carbide_src_dir }}/image/
+  when: carbide_rebuild_image or carbide_image_check.rc != 0
+
+- name: Install squid config
+  ansible.builtin.template:
+    src: squid.conf.j2
+    dest: /etc/squid/squid.conf
+    mode: "0644"
+    validate: /usr/sbin/squid -k parse -f %s
+  notify: Restart squid
+
+- name: Generate splice dummy certificate
+  ansible.builtin.shell:
+    cmd: >-
+      openssl req -x509 -newkey rsa:2048 -nodes -days 3650
+      -subj /CN=carbide-splice
+      -keyout /etc/squid/splice-dummy.pem -out /etc/squid/splice-dummy.pem
+    creates: /etc/squid/splice-dummy.pem
+
+- name: Enable and start squid
+  ansible.builtin.systemd:
+    name: squid
+    enabled: true
+    state: started
+
+- name: Template transparent-egress nftables ruleset
+  ansible.builtin.template:
+    src: carbide-egress.nft.j2
+    dest: /etc/carbide/carbide-egress.nft
+    mode: "0644"
+  notify: Apply nft egress rules
+  when: carbide_squid_mode == "transparent" and carbide_nft_apply
+
+- name: Persist nft ruleset at boot
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/carbide-egress.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Carbide transparent egress rules
+      After=network-online.target
+      Wants=network-online.target
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/sbin/nft -f /etc/carbide/carbide-egress.nft
+      RemainAfterExit=true
+      [Install]
+      WantedBy=multi-user.target
+  when: carbide_squid_mode == "transparent" and carbide_nft_apply
+  notify: Reload systemd
+
+- name: Enable egress rules service
+  ansible.builtin.systemd:
+    name: carbide-egress
+    enabled: true
+    state: started
+  when: carbide_squid_mode == "transparent" and carbide_nft_apply
+
+- name: Create carbide directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /etc/carbide
+    - "{{ carbide_blob_dir }}"
+    - "{{ carbide_log_dir }}"
+
+- name: Template server config
+  ansible.builtin.template:
+    src: config-server.toml.j2
+    dest: "{{ carbide_server_config_path }}"
+    mode: "0600"
+  notify: Restart carbide-server
+
+- name: Install server systemd unit
+  ansible.builtin.copy:
+    src: "{{ carbide_src_dir }}/packaging/carbide-server.service"
+    dest: /etc/systemd/system/carbide-server.service
+    mode: "0644"
+    remote_src: true
+  notify: Reload systemd
+
+- name: Install systemd drop-in for non-default config path
+  ansible.builtin.template:
+    src: systemd-override.conf.j2
+    dest: /etc/systemd/system/carbide-server.service.d/override.conf
+    mode: "0644"
+  vars:
+    carbide_binary: carbide-server
+    carbide_config_flag: "{{ carbide_server_config_path }}"
+  when: carbide_server_config_path != "/etc/carbide/config.toml"
+  notify: Reload systemd
+
+- name: Install logrotate config
+  ansible.builtin.copy:
+    src: "{{ carbide_src_dir }}/packaging/logrotate.carbide"
+    dest: /etc/logrotate.d/carbide
+    mode: "0644"
+    remote_src: true
+
+- name: Ensure firewalld running
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  when: carbide_manage_firewall
+
+- name: Check API rich rules
+  ansible.builtin.command:
+    cmd: >-
+      firewall-cmd --query-rich-rule='rule family="ipv4"
+      source address="{{ item }}" port port="{{ carbide_api_port }}"
+      protocol="tcp" accept'
+  loop: "{{ carbide_api_allow_subnets }}"
+  when: carbide_manage_firewall
+  register: carbide_fw_check
+  changed_when: false
+  failed_when: false
+
+- name: Restrict server API port to sensor/VPN subnets
+  ansible.builtin.command:
+    cmd: >-
+      firewall-cmd --permanent --add-rich-rule='rule family="ipv4"
+      source address="{{ item.item }}" port port="{{ carbide_api_port }}"
+      protocol="tcp" accept'
+  loop: "{{ carbide_fw_check.results | default([]) }}"
+  when: carbide_manage_firewall and item.rc != 0
+  notify: Reload firewalld
+
+- name: Flush handlers so services restart before the smoke check
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start carbide-server
+  ansible.builtin.systemd:
+    name: carbide-server
+    enabled: true
+    state: started
+
+- name: Wait for the server API port
+  ansible.builtin.wait_for:
+    host: "{{ carbide_api_addr if carbide_api_addr != '0.0.0.0' else '127.0.0.1' }}"
+    port: "{{ carbide_api_port }}"
+    delay: 2
+    timeout: 30
+
+- name: Deployment summary
+  ansible.builtin.debug:
+    msg: >-
+      carbide-server up on {{ carbide_api_addr }}:{{ carbide_api_port }}.
+      Never expose the API port or {{ carbide_port_range_start }}-{{
+      carbide_port_range_end }} to the internet.

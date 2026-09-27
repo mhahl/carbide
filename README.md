@@ -19,6 +19,7 @@ Decisions governing this project live in [DECISIONS.md](DECISIONS.md) (Final).
 - `image/` — honeypot container definition (Alpine + sshd).
 - `squid/` — peek-and-splice Squid config and nftables snippet (no MITM).
 - `packaging/` — systemd units, example configs, logrotate.
+- `deploy/` — Ansible playbooks for server/sensor installs ([guide](deploy/README.md)).
 - `docs/` — deployment, analyst guide, abuse runbook, protocol reference.
 
 ## Quickstart (single-host trial)

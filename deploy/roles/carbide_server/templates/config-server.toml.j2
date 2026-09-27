@@ -1,0 +1,47 @@
+# {{ ansible_managed }} — carbide server config.
+role = "server"
+
+[server]
+api_addr = "{{ carbide_api_addr }}"
+api_port = {{ carbide_api_port }}
+tokens = { {% for k, v in carbide_sensor_tokens.items() %}"{{ k }}" = "{{ v }}"{% if not loop.last %}, {% endif %}{% endfor %} }
+db_dsn = "postgresql://{{ carbide_db_user }}:{{ carbide_db_password }}@127.0.0.1:5432/{{ carbide_db_name }}"
+blob_dir = "{{ carbide_blob_dir }}"
+
+[podman]
+socket = "{{ carbide_podman_socket }}"
+image = "{{ carbide_podman_image }}"
+port_range_start = {{ carbide_port_range_start }}
+port_range_end = {{ carbide_port_range_end }}
+network = "{{ carbide_podman_network }}"
+container_user = "{{ carbide_container_user }}"
+memory_mb = {{ carbide_memory_mb }}
+pids_limit = {{ carbide_pids_limit }}
+pool_size = {{ carbide_pool_size }}
+ssh_host = "{{ carbide_ssh_host }}"
+
+[affinity]
+keep_warm_minutes = {{ carbide_keep_warm_minutes }}
+max_containers = {{ carbide_max_containers }}
+idle_ttl_active_days = {{ carbide_idle_ttl_active_days }}
+idle_ttl_inactive_hours = {{ carbide_idle_ttl_inactive_hours }}
+snapshot_retention = {{ carbide_snapshot_retention }}
+commit_per_session = {{ carbide_commit_per_session | lower }}
+
+[forensics]
+max_file_bytes = {{ carbide_forensics_max_file_bytes }}
+include_full_export = {{ carbide_forensics_include_full_export | lower }}
+
+[squid]
+enabled = true
+mode = "{{ carbide_squid_mode }}"
+explicit_proxy = "{% if carbide_squid_mode == 'explicit' %}http://{{ carbide_container_gateway }}:3128{% endif %}"
+log_path = "{{ carbide_squid_log_path }}"
+
+[quotas]
+blob_max_bytes = {{ carbide_blob_max_bytes }}
+session_max_bytes = {{ carbide_session_max_bytes }}
+
+[logging]
+level = "{{ carbide_log_level }}"
+dir = "{{ carbide_log_dir }}"

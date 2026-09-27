@@ -1,0 +1,170 @@
+---
+- name: Check required variables
+  ansible.builtin.assert:
+    that:
+      - carbide_sensor_server_host is defined
+      - carbide_sensor_id is defined
+      - carbide_sensor_token is defined and carbide_sensor_token | length > 0
+    fail_msg: >-
+      Set carbide_sensor_server_host, carbide_sensor_id, and
+      carbide_sensor_token (use vault for the token).
+    quiet: true
+
+- name: Install sensor packages
+  ansible.builtin.dnf:
+    name:
+      - python3-pip
+      - openssh-clients
+      - logrotate
+      - firewalld
+    state: present
+
+- name: Bundle carbide source on the control node
+  ansible.builtin.shell:
+    cmd: |
+      tar -czf /tmp/carbide-src.tar.gz \
+        --exclude='./.venv' --exclude='./.git' \
+        --exclude='*/__pycache__' \
+        --transform='s,^./,carbide-src/,' \
+        -C "{{ carbide_src }}" .
+    changed_when: true
+  delegate_to: localhost
+  run_once: true
+  become: false
+
+- name: Create carbide source parent
+  ansible.builtin.file:
+    path: /opt/carbide
+    state: directory
+    mode: "0755"
+
+- name: Refresh carbide source on the target
+  ansible.builtin.shell:
+    cmd: |
+      set -e
+      rm -rf /opt/carbide/src /opt/carbide/.incoming
+      mkdir -p /opt/carbide/.incoming
+      tar -xzf /tmp/carbide-src.tar.gz -C /opt/carbide/.incoming
+      mv /opt/carbide/.incoming/carbide-src /opt/carbide/src
+      rm -rf /opt/carbide/.incoming
+    changed_when: true
+
+- name: Install carbide into system Python
+  ansible.builtin.pip:
+    name: "{{ carbide_src_dir }}"
+    executable: pip3
+    extra_args: "{{ carbide_pip_extra_args }}"
+    state: "{{ carbide_force_reinstall | ternary('forcereinstall', 'present') }}"
+
+- name: Create carbide-sensor user
+  ansible.builtin.user:
+    name: carbide-sensor
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+
+- name: Create carbide directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    mode: "{{ item.mode }}"
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.group | default('root') }}"
+  loop:
+    - { path: /etc/carbide, mode: "0755" }
+    - { path: "{{ carbide_spool_dir }}", mode: "0750", owner: carbide-sensor, group: carbide-sensor }
+    - { path: "{{ carbide_log_dir }}", mode: "0755", owner: carbide-sensor, group: carbide-sensor }
+
+- name: Generate sensor SSH host key
+  ansible.builtin.shell:
+    cmd: ssh-keygen -t ed25519 -f {{ carbide_host_key_path }} -N ''
+    creates: "{{ carbide_host_key_path }}"
+
+- name: Restrict host key ownership
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: carbide-sensor
+    group: carbide-sensor
+    mode: "0600"
+  loop:
+    - "{{ carbide_host_key_path }}"
+    - "{{ carbide_host_key_path }}.pub"
+
+- name: Template sensor config
+  ansible.builtin.template:
+    src: config-sensor.toml.j2
+    dest: "{{ carbide_sensor_config_path }}"
+    mode: "0600"
+    owner: carbide-sensor
+    group: carbide-sensor
+  notify: Restart carbide-sensor
+
+- name: Install sensor systemd unit
+  ansible.builtin.copy:
+    src: "{{ carbide_src_dir }}/packaging/carbide-sensor.service"
+    dest: /etc/systemd/system/carbide-sensor.service
+    mode: "0644"
+    remote_src: true
+  notify: Reload systemd
+
+- name: Install systemd drop-in for non-default config path
+  ansible.builtin.template:
+    src: systemd-override.conf.j2
+    dest: /etc/systemd/system/carbide-sensor.service.d/override.conf
+    mode: "0644"
+  vars:
+    carbide_binary: carbide-sensor
+    carbide_config_flag: "{{ carbide_sensor_config_path }}"
+  when: carbide_sensor_config_path != "/etc/carbide/config.toml"
+  notify: Reload systemd
+
+- name: Install logrotate config
+  ansible.builtin.copy:
+    src: "{{ carbide_src_dir }}/packaging/logrotate.carbide"
+    dest: /etc/logrotate.d/carbide
+    mode: "0644"
+    remote_src: true
+
+- name: Ensure firewalld running
+  ansible.builtin.systemd:
+    name: firewalld
+    enabled: true
+    state: started
+  when: carbide_manage_firewall
+
+- name: Check sensor SSH port rule
+  ansible.builtin.command:
+    cmd: firewall-cmd --query-port={{ carbide_listen_port }}/tcp
+  when: carbide_manage_firewall
+  register: carbide_port_check
+  changed_when: false
+  failed_when: false
+
+- name: Open sensor SSH port
+  ansible.builtin.command:
+    cmd: firewall-cmd --permanent --add-port={{ carbide_listen_port }}/tcp
+  when: carbide_manage_firewall and carbide_port_check.rc != 0
+  notify: Reload firewalld
+
+- name: Flush handlers so services restart before the smoke check
+  ansible.builtin.meta: flush_handlers
+
+- name: Enable and start carbide-sensor
+  ansible.builtin.systemd:
+    name: carbide-sensor
+    enabled: true
+    state: started
+
+- name: Wait for the sensor SSH port
+  ansible.builtin.wait_for:
+    host: "127.0.0.1"
+    port: "{{ carbide_listen_port }}"
+    delay: 2
+    timeout: 30
+
+- name: Deployment summary
+  ansible.builtin.debug:
+    msg: >-
+      carbide-sensor {{ carbide_sensor_id }} up on port {{
+      carbide_listen_port }}, linked to {{ carbide_sensor_server_host }}:{{
+      carbide_sensor_server_port }}. Spool depth: ls {{ carbide_spool_dir }}.

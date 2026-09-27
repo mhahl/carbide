@@ -1,0 +1,24 @@
+# {{ ansible_managed }} — carbide sensor config.
+role = "sensor"
+
+[sensor]
+listen_addr = "{{ carbide_listen_addr }}"
+listen_port = {{ carbide_listen_port }}
+host_key_path = "{{ carbide_host_key_path }}"
+server_host = "{{ carbide_sensor_server_host }}"
+server_port = {{ carbide_sensor_server_port }}
+sensor_id = "{{ carbide_sensor_id }}"
+token = "{{ carbide_sensor_token }}"
+spool_dir = "{{ carbide_spool_dir }}"
+request_timeout_s = {{ carbide_request_timeout_s }}
+session_idle_timeout_s = {{ carbide_session_idle_timeout_s }}
+session_max_time_s = {{ carbide_session_max_time_s }}
+
+[auth]
+passwords = [{% for p in carbide_auth_passwords %}"{{ p }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+accept_probability = {{ carbide_accept_probability }}
+max_attempts = {{ carbide_max_attempts }}
+
+[logging]
+level = "{{ carbide_log_level }}"
+dir = "{{ carbide_log_dir }}"

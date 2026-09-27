@@ -1,0 +1,31 @@
+# Defaults for the carbide_sensor role. Mirror packaging/config-sensor.toml.example.
+# REQUIRED (no default): carbide_sensor_server_host, carbide_sensor_id,
+# carbide_sensor_token.
+
+# Single-host dev: point this at e.g. /etc/carbide/sensor.toml and the role
+# installs a systemd drop-in overriding ExecStart. Multi-host: leave default.
+carbide_sensor_config_path: /etc/carbide/config.toml
+carbide_src: "{{ playbook_dir }}/.."     # control-node checkout to ship
+carbide_src_dir: /opt/carbide/src        # where it lands on the target
+carbide_pip_extra_args: "--break-system-packages"
+carbide_force_reinstall: false           # reinstall even if version unchanged
+
+carbide_listen_addr: "0.0.0.0"
+carbide_listen_port: 2222
+carbide_host_key_path: /etc/carbide/ssh_host_key
+# carbide_sensor_server_host: "10.8.0.5"  # REQUIRED: server API address
+carbide_sensor_server_port: 8440
+# carbide_sensor_id: sensor-01            # REQUIRED: must match a server token key
+# carbide_sensor_token: "TOKEN"           # REQUIRED: must equal server tokens[id]
+carbide_spool_dir: /var/lib/carbide/spool
+carbide_request_timeout_s: 10.0
+carbide_session_idle_timeout_s: 600.0
+carbide_session_max_time_s: 3600.0
+
+carbide_auth_passwords: ["password", "123456", "admin", "letmein"]
+carbide_accept_probability: 0.05
+carbide_max_attempts: 10
+
+carbide_manage_firewall: true
+carbide_log_dir: /var/log/carbide
+carbide_log_level: INFO

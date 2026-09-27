@@ -1,0 +1,6 @@
+---
+- name: Deploy carbide sensors
+  hosts: carbide_sensors
+  become: true
+  roles:
+    - carbide_sensor

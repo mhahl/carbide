@@ -1,0 +1,5 @@
+# {{ ansible_managed }} — single-host override: this role uses a dedicated
+# config file instead of the default /etc/carbide/config.toml.
+[Service]
+ExecStart=
+ExecStart=/usr/local/bin/{{ carbide_binary }} -c {{ carbide_config_flag }}
