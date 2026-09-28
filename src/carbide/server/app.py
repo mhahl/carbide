@@ -37,7 +37,9 @@ class ServerApp:
             self.squid = None
 
     async def run(self):
+        log.info("starting carbide-server")
         await self.db.connect()
+        log.info("postgres connected")
         await self.pool.start()
         tasks = [
             asyncio.create_task(self.api.run(), name="api"),
@@ -47,10 +49,13 @@ class ServerApp:
         if self.squid is not None:
             tasks.append(asyncio.create_task(self.squid.run_forever(),
                                              name="squid"))
+        else:
+            log.info("squid ingest disabled")
         log.info("carbide-server up")
         try:
             await asyncio.gather(*tasks)
         finally:
+            log.info("shutting down")
             for task in tasks:
                 task.cancel()
             # Wait for the children (the API drains its handlers first) so
@@ -60,3 +65,4 @@ class ServerApp:
                 self.squid.stop()
             self.podman.close()
             await self.db.close()
+            log.info("carbide-server stopped")

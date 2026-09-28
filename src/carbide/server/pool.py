@@ -50,6 +50,9 @@ class Pool:
 
     # -- startup ---------------------------------------------------------
     async def start(self):
+        log.info("pool starting (image=%s network=%s ports=%d-%d fresh=%d)",
+                 self._image, self._network, self._port_start,
+                 self._port_end, self._pool_size)
         await self.run_sync(self._pod.connect)
         await self.run_sync(self._pod.ensure_network, self._network)
         self._used_ports = set(await self._db.ports_in_use())
@@ -59,8 +62,10 @@ class Pool:
         await self._reconcile()
         await self._ensure_reference()
         await self._refill()
+        log.info("pool ready (%d fresh containers)", len(self._fresh))
 
     async def _reconcile(self):
+        kept, dropped, strays = 0, 0, 0
         for aff in await self._db.list_affinities():
             cid = aff["container_id"]
             if not await self.run_sync(self._pod.exists, cid):
@@ -69,6 +74,9 @@ class Pool:
                 await self._db.delete_affinity(aff["sensor_id"],
                                                aff["attacker_ip"])
                 self._used_ports.discard(aff["ssh_port"])
+                dropped += 1
+            else:
+                kept += 1
         known = {a["container_id"]
                  for a in await self._db.list_affinities()}
         for container in await self.run_sync(self._pod.list_carbide):
@@ -82,6 +90,9 @@ class Pool:
                 continue
             log.warning("removing stray carbide container %s", cid[:12])
             await self.run_sync(self._pod.remove, cid)
+            strays += 1
+        log.debug("reconcile: %d affinities kept, %d dropped, %d strays "
+                  "removed", kept, dropped, strays)
 
     async def _ensure_reference(self):
         exists = await self.run_sync(self._pod.exists, REF_NAME)
@@ -95,6 +106,9 @@ class Pool:
                     self._memory, self._pids)
             finally:
                 self._free_port(port)
+            log.info("created reference container %s", REF_NAME)
+        else:
+            log.debug("reference container %s present", REF_NAME)
 
     def reference_id(self) -> str:
         return REF_NAME
@@ -132,6 +146,7 @@ class Pool:
         except Exception:
             self._free_port(port)
             raise
+        log.info("created fresh container %s (port %d)", cid[:12], port)
         return {"container_id": cid, "port": port, "password": password}
 
     async def _refill(self):
@@ -142,6 +157,8 @@ class Pool:
                 except Exception as exc:
                     log.error("fresh pool refill failed: %s", exc)
                     break
+            log.debug("fresh pool depth %d/%d",
+                      len(self._fresh), self._pool_size)
 
     # -- assignment ------------------------------------------------------------
     async def container_for(self, sensor_id: str, ip: str) -> dict:
@@ -152,6 +169,9 @@ class Pool:
                                        aff["container_id"]):
                     await self._ensure_started(aff["container_id"])
                     await self._wait_sshd(aff["ssh_port"])
+                    log.info("reusing container %s for %s/%s (port %d)",
+                             aff["container_id"][:12], sensor_id, ip,
+                             aff["ssh_port"])
                     return self._endpoint(aff, fresh=False)
                 log.warning("affinity %s/%s lost container %s; reassigning",
                             sensor_id, ip, aff["container_id"][:12])
@@ -170,13 +190,17 @@ class Pool:
                 await self._db.set_affinity(
                     sensor_id, ip, cid, fresh["port"], fresh["password"],
                     container_ip)
-            except Exception:
+            except Exception as exc:
+                log.warning("container assignment for %s/%s failed: %s",
+                            sensor_id, ip, exc)
                 self._free_port(fresh["port"])
                 try:
                     await self.run_sync(self._pod.remove, cid)
                 except Exception:
                     pass
                 raise
+            log.info("assigned fresh container %s to %s/%s (port %d)",
+                     cid[:12], sensor_id, ip, fresh["port"])
             asyncio.create_task(self._refill())
             return {
                 "container_id": cid,
@@ -200,7 +224,10 @@ class Pool:
     async def _ensure_started(self, cid: str):
         status = await self.run_sync(self._pod.status, cid)
         if status != "running":
+            log.info("starting container %s (was %s)", cid[:12], status)
             await self.run_sync(self._pod.start, cid)
+        else:
+            log.debug("container %s already running", cid[:12])
 
     async def _wait_sshd(self, port: int, timeout: float = 30.0):
         """Wait until the published sshd port accepts TCP (host keys and
@@ -224,6 +251,7 @@ class Pool:
                         await writer.wait_closed()
                     except Exception:
                         pass
+                    log.debug("sshd on port %d is up", port)
                     return
                 except Exception as exc:
                     last_exc = exc
@@ -237,12 +265,18 @@ class Pool:
         task = self._warm_tasks.pop(key, None)
         if task is not None:
             task.cancel()
+            log.debug("keep-warm cancelled for %s/%s (new session)",
+                      sensor_id, ip)
+        log.debug("session started %s/%s (active=%d)",
+                  sensor_id, ip, self._refcounts[key])
 
     async def session_ended(self, sensor_id: str, ip: str):
         key = (sensor_id, ip)
         left = self._refcounts.get(key, 1) - 1
         self._refcounts[key] = max(0, left)
         await self._db.touch_affinity_end(sensor_id, ip)
+        log.debug("session ended %s/%s (active=%d, keep-warm=%ds)",
+                  sensor_id, ip, self._refcounts[key], self._keep_warm_s)
         if left <= 0 and key not in self._warm_tasks:
             self._warm_tasks[key] = asyncio.create_task(
                 self._warm_stop(sensor_id, ip))
@@ -255,9 +289,13 @@ class Pool:
             if self._keep_warm_s > 0:
                 await asyncio.sleep(self._keep_warm_s)
             if self.is_active(sensor_id, ip):
+                log.debug("keep-warm for %s/%s superseded by new session",
+                          sensor_id, ip)
                 return
             aff = await self._db.get_affinity(sensor_id, ip)
             if aff is None:
+                log.debug("keep-warm for %s/%s: affinity gone",
+                          sensor_id, ip)
                 return
             log.info("keep-warm expired for %s/%s; stopping %s",
                      sensor_id, ip, aff["container_id"][:12])
@@ -276,8 +314,12 @@ class Pool:
             task.cancel()
         aff = await self._db.get_affinity(sensor_id, ip)
         if aff is None:
+            log.debug("remove_affinity %s/%s: no such affinity",
+                      sensor_id, ip)
             return
         await self.run_sync(self._pod.remove, aff["container_id"])
         self._free_port(aff["ssh_port"])
         await self._db.delete_affinity(sensor_id, ip)
         self._refcounts.pop((sensor_id, ip), None)
+        log.info("removed affinity %s/%s (container %s, port %d)",
+                 sensor_id, ip, aff["container_id"][:12], aff["ssh_port"])

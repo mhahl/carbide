@@ -30,6 +30,7 @@ class PodmanWrapper:
             self._client.ping()
         except Exception as exc:
             raise PodmanError(f"podman ping failed: {exc}")
+        log.info("connected to podman at %s", self._url)
 
     def close(self):
         if self._client is not None:
@@ -38,6 +39,7 @@ class PodmanWrapper:
             except Exception:
                 pass
             self._client = None
+            log.debug("podman connection closed")
 
     def _wrap(self, op, *args, **kwargs):
         try:
@@ -53,6 +55,8 @@ class PodmanWrapper:
         if not exists:
             self._wrap(self._client.networks.create, name)
             log.info("created podman network %s", name)
+        else:
+            log.debug("podman network %s present", name)
 
     def create_container(self, name: str, image: str, user: str,
                          host_port: int, network: str, environment: dict,
@@ -70,16 +74,21 @@ class PodmanWrapper:
             kwargs["network"] = network
         container = self._wrap(self._client.containers.create, image,
                                **kwargs)
+        log.debug("created container %s (%s) image=%s port=%s",
+                  name, container.id[:12], image, host_port)
         return container.id
 
     def start(self, cid: str):
+        log.debug("starting container %s", cid[:12])
         self._wrap(self._client.containers.get(cid).start)
 
     def stop(self, cid: str, timeout: int = 10):
         try:
             container = self._client.containers.get(cid)
         except Exception:
+            log.debug("stop %s: already gone", cid[:12])
             return
+        log.debug("stopping container %s", cid[:12])
         try:
             container.stop(timeout=timeout)
         except Exception as exc:
@@ -89,7 +98,9 @@ class PodmanWrapper:
         try:
             container = self._client.containers.get(cid)
         except Exception:
+            log.debug("remove %s: already gone", cid[:12])
             return
+        log.debug("removing container %s", cid[:12])
         self._wrap(container.remove, force=True)
 
     def exists(self, cid: str) -> bool:
@@ -134,10 +145,12 @@ class PodmanWrapper:
 
     # -- forensics --------------------------------------------------------
     def diff(self, cid: str) -> list:
+        log.debug("diff container %s", cid[:12])
         return self._wrap(self._client.containers.get(cid).diff)
 
     def get_file(self, cid: str, path: str) -> tuple[bytes, dict]:
         """Returns (bytes, stat). Raises PodmanError (incl. IsDir)."""
+        log.debug("get file %s from %s", path, cid[:12])
         container = self._client.containers.get(cid)
         try:
             stream, stat = container.get_archive(path)
@@ -163,6 +176,7 @@ class PodmanWrapper:
             raise PodmanError(f"tar decode failed: {exc}")
 
     def export_to(self, cid: str, dest_path: str):
+        log.debug("exporting container %s", cid[:12])
         container = self._client.containers.get(cid)
         try:
             with open(dest_path, "wb") as fh:
@@ -172,6 +186,7 @@ class PodmanWrapper:
             raise PodmanError(f"export failed: {exc}")
 
     def commit(self, cid: str, image: str) -> str:
+        log.debug("committing container %s as %s", cid[:12], image)
         container = self._client.containers.get(cid)
         repo, _, tag = image.partition(":")
         try:
@@ -185,3 +200,5 @@ class PodmanWrapper:
             self._client.images.remove(image, force=True)
         except Exception as exc:
             log.warning("remove image %s failed: %s", image, exc)
+        else:
+            log.debug("removed image %s", image)

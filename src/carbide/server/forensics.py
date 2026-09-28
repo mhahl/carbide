@@ -89,6 +89,8 @@ class Forensics:
                       session_id: str, container_id: str,
                       reason: str = "", final: bool = False) -> dict:
         """Run full capture for one session; returns a summary dict."""
+        log.info("forensics starting: session=%s container=%s reason=%s",
+                 session_id, container_id[:12], reason or "session end")
         at = datetime.datetime.now(datetime.timezone.utc)
         try:
             raw = await self._pool.run_sync(self._pod.diff, container_id)
@@ -97,6 +99,7 @@ class Forensics:
                 session_id, sensor_id, attacker_ip, container_id, reason,
                 f"diff failed: {exc}", at)
         rows, warnings = normalize_changes(raw)
+        log.debug("diff for %s: %d paths", session_id, len(rows))
         await self._db.add_diff_rows(session_id, rows)
         changes = []
         for path, kind in rows:
@@ -139,11 +142,15 @@ class Forensics:
             else:
                 entry["note"] = f"unreadable: {exc}"
                 warnings.append(f"{path}: {exc}")
+                log.debug("forensics %s: %s unreadable: %s",
+                          session_id, path, exc)
             return entry
         entry["size"] = len(content)
         if len(content) > self._max_file:
             entry["note"] = (f"oversized ({len(content)} bytes > "
                              f"{self._max_file}); content skipped")
+            log.debug("forensics %s: %s oversized (%d bytes), skipped",
+                      session_id, path, len(content))
             return entry
         try:
             ref = await self._pool.run_sync(
@@ -163,6 +170,8 @@ class Forensics:
         except QuotaExceeded:
             entry["note"] = "blob quota exceeded; content skipped"
             warnings.append("blob quota exceeded during capture")
+            log.debug("forensics %s: blob quota hit on %s",
+                      session_id, path)
             return entry
         await self._db.add_blob(ref_blob.sha256, ref_blob.path,
                                 ref_blob.size)
@@ -188,6 +197,8 @@ class Forensics:
                 ref = self._blobs.put_bytes(data)
             except QuotaExceeded:
                 warnings.append("blob quota exceeded; full export skipped")
+                log.debug("forensics %s: full export skipped (blob quota)",
+                          session_id)
                 return
             await self._db.add_blob(ref.sha256, ref.path, ref.size)
             await self._db.add_session_file(
@@ -195,8 +206,12 @@ class Forensics:
                 ref.size, datetime.datetime.now(datetime.timezone.utc))
             changes.append({"path": "<full export>", "kind": "export",
                             "size": len(data), "sha256": ref.sha256})
+            log.debug("forensics %s: full export stored (%d bytes)",
+                      session_id, len(data))
         except Exception as exc:
             warnings.append(f"full export failed: {exc}")
+            log.debug("forensics %s: full export failed: %s",
+                      session_id, exc)
         finally:
             try:
                 os.unlink(tmp.name)
@@ -244,6 +259,8 @@ class Forensics:
 
     async def _report_unavailable(self, session_id, sensor_id, ip,
                                   container_id, reason, error, at):
+        log.warning("forensics unavailable for session %s: %s",
+                    session_id, error)
         warnings = [error]
         markdown, payload = self._render(
             session_id, sensor_id, ip, container_id, reason, at, [], warnings)
@@ -267,3 +284,5 @@ class Forensics:
             oldest = snaps.pop(0)[0]
             await self._pool.run_sync(self._pod.remove_image, oldest)
             await self._db.delete_snapshot(oldest)
+            log.debug("pruned snapshot %s (retention %d)",
+                      oldest, self._retention)

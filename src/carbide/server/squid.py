@@ -50,9 +50,11 @@ class SquidTailer:
         self._path = log_path
         self._poll = poll_s
         self._running = False
+        self._missing_warned = False
 
     async def run_forever(self):
         self._running = True
+        log.info("tailing squid log %s", self._path)
         fh = None
         inode = None
         try:
@@ -61,6 +63,13 @@ class SquidTailer:
                     if fh is None:
                         fh, inode = self._open_end()
                     if fh is None:
+                        if not self._missing_warned:
+                            log.warning("squid log %s not found; waiting",
+                                        self._path)
+                            self._missing_warned = True
+                        else:
+                            log.debug("squid log %s still missing",
+                                      self._path)
                         await asyncio.sleep(self._poll)
                         continue
                     line = fh.readline()
@@ -68,6 +77,8 @@ class SquidTailer:
                         await self.handle_line(line)
                         continue
                     if self._rotated(inode):
+                        log.info("squid log rotated; reopening %s",
+                                 self._path)
                         fh.close()
                         fh, inode = None, None
                         continue
@@ -89,6 +100,7 @@ class SquidTailer:
             stat = os.stat(self._path)
             fh = open(self._path, errors="replace")
             fh.seek(0, os.SEEK_END)
+            self._missing_warned = False
             return fh, stat.st_ino
         except OSError:
             return None, None
@@ -102,6 +114,7 @@ class SquidTailer:
     async def handle_line(self, line: str):
         hit = parse_line(line)
         if hit is None:
+            log.debug("unparseable squid line: %.160s", line.strip())
             return
         aff = await self._db.get_affinity_by_container_ip(hit["client_ip"])
         session_id = ""
@@ -115,6 +128,12 @@ class SquidTailer:
                     aff["sensor_id"], aff["attacker_ip"])
             if row is not None:
                 session_id = row[0]
+        else:
+            log.debug("squid hit from unattributed ip %s: %s %s",
+                      hit["client_ip"], hit["method"], hit["url"])
+        if session_id:
+            log.debug("squid hit %s %s -> session %s",
+                      hit["method"], hit["url"], session_id)
         await self._db.add_squid_hit(
             session_id, sensor_id, hit["client_ip"], hit["at"],
             hit["method"], hit["url"], hit["status"], hit["bytes"],

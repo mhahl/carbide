@@ -80,6 +80,7 @@ class ServerAPI:
     async def _serve_connection(self, reader, writer):
         sensor_id = None
         peer = writer.get_extra_info("peername")
+        log.debug("api connection from %s", peer)
         try:
             while True:
                 line = await reader.readline()
@@ -113,9 +114,13 @@ class ServerAPI:
                         reply = protocol.new_reply(
                             req_id, ok=False, error="unknown type")
                 except RecordError as exc:
+                    log.debug("refusing %s from %s: %s",
+                              mtype, sensor_id or peer, exc)
                     reply = protocol.new_reply(
                         req_id, ok=False, error=str(exc))
                 except PodmanError as exc:
+                    log.warning("podman failure serving %s from %s: %s",
+                                mtype, sensor_id or peer, exc)
                     reply = protocol.new_reply(
                         req_id, ok=False, error=str(exc))
                 except Exception as exc:  # never drop the link on one msg
@@ -125,8 +130,12 @@ class ServerAPI:
                 writer.write(protocol.encode(reply))
                 await writer.drain()
                 if mtype == "hello" and not reply.get("ok"):
+                    log.warning("sensor link rejected from %s: %s",
+                                peer, reply.get("error"))
                     return
                 if sensor_id is None and mtype != "hello":
+                    log.debug("dropping unauthenticated %s from %s",
+                              mtype, peer)
                     return
         except (ConnectionResetError, BrokenPipeError):
             pass
@@ -154,7 +163,10 @@ class ServerAPI:
         ip = msg.get("attacker_ip")
         if not isinstance(ip, str) or not ip or len(ip) > 64:
             raise RecordError("bad attacker_ip")
-        return await self._pool.container_for(sensor_id, ip)
+        endpoint = await self._pool.container_for(sensor_id, ip)
+        log.debug("container_for %s %s -> %s (fresh=%s)", sensor_id, ip,
+                  endpoint["container_id"][:12], endpoint["fresh"])
+        return endpoint
 
     async def _record(self, sensor_id: str, msg: dict):
         record = msg.get("record")
@@ -169,6 +181,8 @@ class ServerAPI:
         if len(record_id) > 128 or len(session_id) > 128:
             raise RecordError("record/session id too long")
         if not await self._db.claim_record(record_id):
+            log.debug("duplicate record %s ignored (session %s)",
+                      record_id, session_id)
             return  # duplicate delivery; already applied
         handler = {
             protocol.KIND_SESSION_START: self._r_session_start,
@@ -182,6 +196,8 @@ class ServerAPI:
         if handler is None:
             raise RecordError(f"unknown kind {kind}")
         await handler(sensor_id, session_id, record)
+        log.debug("record %s (%s) for session %s applied",
+                  record_id, kind, session_id)
 
     async def _r_session_start(self, sensor_id, session_id, record):
         ip = _need_str(record, "attacker_ip", 64)
@@ -192,6 +208,8 @@ class ServerAPI:
         await self._db.set_session_started(
             session_id, username, parse_at(record.get("at")), ip)
         await self._pool.session_started(sensor_id, ip)
+        log.info("session %s started: sensor=%s ip=%s user=%s",
+                 session_id, sensor_id, ip, username or "-")
 
     async def _r_session_container(self, sensor_id, session_id, record):
         cid = _need_str(record, "container_id", 128)
@@ -212,12 +230,16 @@ class ServerAPI:
         ip, container_id = session[2], session[4]
         if ip:
             await self._pool.session_ended(sensor_id, ip)
+        log.info("session %s ended: sensor=%s ip=%s reason=%s",
+                 session_id, sensor_id, ip or "-", reason or "-")
         if container_id:
             asyncio.create_task(self._collect(
                 sensor_id, ip, session_id, container_id, reason))
 
     async def _collect(self, sensor_id, ip, session_id, container_id,
                        reason):
+        log.debug("starting forensics for session %s (container %s)",
+                  session_id, container_id[:12])
         try:
             summary = await self._forensics.collect(
                 sensor_id=sensor_id, attacker_ip=ip, session_id=session_id,
@@ -239,6 +261,11 @@ class ServerAPI:
             session_id, sensor_id, username, password,
             bool(record.get("accepted")), bool(record.get("matched_list")),
             parse_at(record.get("at")))
+        # Never log the password: usernames and outcomes only.
+        log.debug("auth attempt session=%s user=%s accepted=%s listed=%s",
+                  session_id, username or "-",
+                  bool(record.get("accepted")),
+                  bool(record.get("matched_list")))
 
     async def _over_quota(self, session_id, extra: int) -> bool:
         try:
@@ -247,6 +274,8 @@ class ServerAPI:
             return False
         if used + extra > self._session_max:
             await self._db.set_session_over_quota(session_id)
+            log.debug("session %s over quota; dropping %d bytes",
+                      session_id, extra)
             return True
         return False
 
@@ -298,6 +327,8 @@ class ServerAPI:
         if await self._over_quota(session_id, len(blob)):
             await self._db.add_session_file(session_id, name, None,
                                             len(blob), at)
+            log.info("file %s for session %s dropped (session over quota)",
+                     name, session_id)
             return
         try:
             ref = self._blobs.put_bytes(blob)
@@ -305,7 +336,11 @@ class ServerAPI:
             await self._db.set_session_over_quota(session_id)
             await self._db.add_session_file(session_id, name, None,
                                             len(blob), at)
+            log.warning("blob store full; file %s for session %s recorded "
+                        "without content", name, session_id)
             return
         await self._db.add_blob(ref.sha256, ref.path, ref.size)
         await self._db.add_session_file(session_id, name, ref.sha256,
                                         ref.size, at)
+        log.info("stored file %s (%d bytes) for session %s",
+                 name, ref.size, session_id)

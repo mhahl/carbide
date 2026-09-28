@@ -31,6 +31,7 @@ class EvictionJob:
         self._interval = interval_s
 
     async def run_forever(self):
+        log.info("eviction job started (pass every %ss)", self._interval)
         while True:
             await asyncio.sleep(self._interval)
             try:
@@ -40,8 +41,12 @@ class EvictionJob:
 
     async def run_once(self, now=None):
         now = now or datetime.datetime.now(datetime.timezone.utc)
+        scanned, evicted = 0, 0
         for aff in await self._db.list_affinities():
+            scanned += 1
             if self._pool.is_active(aff["sensor_id"], aff["attacker_ip"]):
+                log.debug("eviction: skipping active %s/%s",
+                          aff["sensor_id"], aff["attacker_ip"])
                 continue
             last = _as_utc(aff["last_session_end"]) or _as_utc(
                 aff["created_at"]) or now
@@ -49,6 +54,7 @@ class EvictionJob:
             if now - last > ttl:
                 tier = "active" if aff["has_activity"] else "inactive"
                 await self._evict(aff, f"idle TTL expired ({tier})")
+                evicted += 1
         remaining = [a for a in await self._db.list_affinities()
                      if not self._pool.is_active(a["sensor_id"],
                                                  a["attacker_ip"])]
@@ -57,6 +63,8 @@ class EvictionJob:
                            _as_utc(a["created_at"]) or now)
             for aff in remaining[:len(remaining) - self._max]:
                 await self._evict(aff, "max-containers LRU backstop")
+                evicted += 1
+        log.info("eviction pass: %d scanned, %d evicted", scanned, evicted)
 
     async def _evict(self, aff, reason):
         sensor_id, ip = aff["sensor_id"], aff["attacker_ip"]
@@ -75,10 +83,13 @@ class EvictionJob:
         except Exception as exc:
             log.warning("final archive for %s/%s failed: %s",
                         sensor_id, ip, exc)
-        for image, _created in await self._db.list_snapshots(sensor_id, ip):
+        snaps = await self._db.list_snapshots(sensor_id, ip)
+        for image, _created in snaps:
             try:
                 await self._pool.run_sync(self._pod.remove_image, image)
             except Exception as exc:
                 log.warning("snapshot cleanup %s failed: %s", image, exc)
             await self._db.delete_snapshot(image)
+        log.debug("evicted %s/%s: removed %d snapshots", sensor_id, ip,
+                  len(snaps))
         await self._pool.remove_affinity(sensor_id, ip)

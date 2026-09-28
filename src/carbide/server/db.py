@@ -162,6 +162,7 @@ class Database:
                         "INSERT INTO schema_version (version) VALUES (%s)",
                         (version,))
                     log.info("applied db migration %d", version)
+                log.debug("db migrations current (%d applied)", len(have))
             await self._conn.commit()
 
     async def _exec(self, sql, params=(), fetch=None):
