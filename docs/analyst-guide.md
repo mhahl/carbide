@@ -2,6 +2,16 @@
 
 Every investigation starts from one `sessions` row.
 
+## Connecting
+
+Postgres and the blob store live in the server stack — reach them through
+compose (from `compose/server/` on the server host):
+
+```sh
+podman compose exec db psql -U carbide carbide          # SQL shell
+podman compose exec server cat /var/lib/carbide/blobs/<2-hex>/<sha256>  # a blob
+```
+
 ## Finding sessions
 
 ```sql

@@ -49,6 +49,9 @@ Thumbs.db
 config.toml
 *.local.toml
 
+# Compose deploys: .env files hold secrets; commit the .example files only.
+/compose/*/.env
+
 # Runtime data: sensor spool dirs, blob store content, db dumps
 spool/
 blobs/

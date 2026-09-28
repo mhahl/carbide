@@ -1,56 +1,49 @@
 # Deployment
 
-Two roles, one config file each (`/etc/carbide/config.toml`).
+Both roles ship as containers from one image (`quay.io/sigaint/carbide`)
+and run under podman compose. Full operator detail lives in
+[admin-guide](admin-guide.md); this is the checklist.
 
 ## Server host (beefy disk + CPU)
 
-1. Install Postgres, Podman, Squid, Python 3.11+, and the system `libpq`
-   (Fedora: `dnf install libpq`; the server needs the shared libpq at
-   runtime — do NOT substitute the `psycopg[binary]` wheel, whose bundled
-   OpenSSL corrupts the heap next to asyncssh); then install this package
-   (`pip install .` or from your repo checkout).
-2. Create the database and user:
-   ```sql
-   CREATE USER carbide WITH PASSWORD '...';
-   CREATE DATABASE carbide OWNER carbide;
+Prereqs: podman, podman-compose, openssl, envsubst (`gettext-envsubst`),
+root for the podman socket and firewall.
+
+1. Copy `compose/server/` to the host (or clone the repo).
+2. Run setup (as root):
+   ```sh
+   ./setup.sh --ssh-host <vpn-ip-of-this-host> --api-bind <vpn-ip> \
+     --allow-subnet <sensor-net-cidr>
    ```
-   Schema migrations run automatically at server start.
-3. Build the honeypot image: `podman build -t carbide-honeypot:latest image/`
-4. Create a dedicated container network (recommended):
-   `podman network create carbide`, and set `[podman] network = "carbide"`.
-5. Install `squid/squid.conf` (adjust the `containers` ACL to your network),
-   generate the never-served dummy cert it references:
-   `openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=carbide-splice -keyout /etc/squid/splice-dummy.pem -out /etc/squid/splice-dummy.pem`
-   then `squid -k parse && systemctl enable --now squid`.
-6. Transparent mode only: apply reviewed nftables rules from
-   `squid/nftables.conf.snippet`. Explicit mode instead: set
-   `[squid] mode = "explicit"` and `explicit_proxy` to the Squid address.
-   The container entrypoint stamps the proxy into sshd (`SetEnv`), so
-   attacker shells inherit it with no per-session setup.
-7. Mount the NFS blob store at `[server] blob_dir` (or use local disk).
-8. Copy `packaging/config-server.toml.example` to `/etc/carbide/config.toml`,
-   set tokens + `db_dsn`, install `packaging/carbide-server.service`, and the
-   logrotate file. `systemctl enable --now carbide-server`.
-9. Open the API port **to sensors only** (VPN/firewall). The API is plain TCP
-   with token auth — it must never face the internet.
+   This creates the shared `carbide` network, pulls images, generates the
+   sensor token + DB password into `.env`, renders `config.toml`, restricts
+   the API port to your subnets, and starts the stack (server + Postgres +
+   Squid). Schema migrations run automatically at first server start.
+3. Copy the printed `SENSOR_TOKEN` — every sensor needs it.
+4. The API is plain TCP with token auth: VPN-only plus firewall, never the
+   internet. Container sshd ports (`22000–22100`) stay host-internal too.
 
 ## Sensor hosts (small, disposable)
 
-1. Install Python 3.11+ and this package.
-2. Copy `packaging/config-sensor.toml.example` to `/etc/carbide/config.toml`:
-   unique `sensor_id`, the matching `token`, and the server address
-   (VPN address or hostname).
-3. Install `packaging/carbide-sensor.service`
-   (`useradd -r -s /usr/sbin/nologin carbide-sensor` first),
-   `systemctl enable --now carbide-sensor`.
-4. The SSH host key generates on first start; back it up if you want a stable
-   sensor fingerprint.
+Prereqs: podman, podman-compose, envsubst. Root only for the firewall step.
+
+1. Copy `compose/sensor/` to the host.
+2. Run setup:
+   ```sh
+   ./setup.sh --server-host <vpn-ip-of-server> --sensor-id <unique-id> \
+     --token <SENSOR_TOKEN>
+   ```
+   Unique `sensor_id` per sensor (it namespaces affinity); the token is the
+   one shared value from the server.
+3. The SSH host key self-generates into a persisted volume on first start.
 
 ## Health signals
 
-- Sensor logs `linked to carbide-server`; a growing `spool_dir` means the
-  server/VPN is unreachable (evidence is safe, forwarding resumes).
-- Server logs pool refills, forensics summaries, and evictions.
+- Sensor logs `linked to carbide-server` (`podman compose logs sensor`); a
+  growing spool (`podman compose exec sensor ls /var/lib/carbide/spool`)
+  means the server/VPN is unreachable (evidence is safe, resumes on link).
+- Server logs pool refills, forensics summaries, and evictions
+  (`podman compose logs server`).
 - Quotas: `[quotas]` caps the blob store and per-session evidence; Squid caps
-  single bodies; logrotate bounds the logs. Size the blob filesystem and
-  Postgres for your retention; eviction TTLs bound affinity containers.
+  single bodies. Size host disk for the named volumes; eviction TTLs bound
+  affinity containers.

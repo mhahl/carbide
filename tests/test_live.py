@@ -240,7 +240,7 @@ def server_config(name, api_port, blob_max=10**9, session_max=10**7,
     blob_dir = os.path.join(base, f"blobs-{name}")
     return validate({
         "role": "server",
-        "server": {"tokens": {"s1": "tok1", "s2": "tok2"},
+        "server": {"sensor_token": "shared-tok",
                    "db_dsn": FIX["dsn"], "blob_dir": blob_dir,
                    "api_addr": "127.0.0.1", "api_port": api_port},
         "podman": {"socket": FIX["podman_url"], "image": IMAGE,
@@ -361,12 +361,12 @@ class FleetTest(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(db.close)
 
         p1, p2 = free_port(), free_port()
-        s1 = SensorApp(sensor_config("s1", "tok1", p1, api_port))
+        s1 = SensorApp(sensor_config("s1", "shared-tok", p1, api_port))
         from carbide.sensor.__main__ import ensure_host_key
         ensure_host_key(os.path.join(base, "sshkey-s1"))
         t1 = asyncio.create_task(s1.run())
         self.addAsyncCleanup(cancel_task, t1)
-        s2 = SensorApp(sensor_config("s2", "tok2", p2, api_port))
+        s2 = SensorApp(sensor_config("s2", "shared-tok", p2, api_port))
         ensure_host_key(os.path.join(base, "sshkey-s2"))
         t2 = asyncio.create_task(s2.run())
         self.addAsyncCleanup(cancel_task, t2)
@@ -591,7 +591,7 @@ class QuotaLiveTest(unittest.IsolatedAsyncioTestCase):
             await db.connect()
             try:
                 sport = free_port()
-                sensor = SensorApp(sensor_config("s1", "tok1", sport,
+                sensor = SensorApp(sensor_config("s1", "shared-tok", sport,
                                                  api_port))
                 from carbide.sensor.__main__ import ensure_host_key
                 ensure_host_key(os.path.join(FIX["tmp"].name,

@@ -13,7 +13,7 @@ from tests.fakes import FakeDatabase, FakePodman
 def make_config(**over):
     raw = {
         "role": "server",
-        "server": {"tokens": {"s1": "tok"}, "db_dsn": "x",
+        "server": {"sensor_token": "tok", "db_dsn": "x",
                    "blob_dir": "y"},
         "podman": {"image": "img"},
         "affinity": {"snapshot_retention": 2},
@@ -109,6 +109,19 @@ class ForensicsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.pod.images), 1)
         snaps = await self.db.list_snapshots("s1", "1.2.3.4")
         self.assertEqual(len(snaps), 1)
+
+    async def test_snapshot_tag_is_valid_reference(self):
+        # Registry references must be lowercase with no dots that could
+        # parse as a domain — even for mixed-case sensor ids and dotted IPs.
+        import re
+        await self.forensics.collect(
+            sensor_id="S1-Mixed", attacker_ip="10.89.1.1",
+            session_id="s", container_id=self.cid)
+        self.assertEqual(len(self.pod.images), 1)
+        tag = self.pod.images[0]
+        self.assertRegex(tag, r"^[a-z0-9][a-z0-9_-]*$")
+        self.assertIn("s1-mixed", tag)
+        self.assertIn("10_89_1_1", tag)
 
     async def test_snapshot_retention_prunes(self):
         for _ in range(4):

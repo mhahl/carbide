@@ -1,13 +1,15 @@
 # Sensor↔server protocol
 
 Plain TCP, JSON objects, one per line (`carbide/common/protocol.py`).
-Link security is the deployment's VPN; authentication is per-sensor tokens.
+Link security is the deployment's VPN; authentication is one token shared
+by all sensors (each sensor keeps a unique `sensor_id` for affinity).
 
 ## Handshake
 
 Sensor → `{"id","type":"hello","sensor_id","token"}`.
 Server → `{"type":"reply","in_reply_to","ok":true}` or `ok:false` + close.
-Unknown sensors and bad tokens are rejected; the sensor retries with backoff.
+Bad or missing `sensor_id`s and wrong tokens are rejected; the sensor
+retries with backoff.
 
 ## Requests
 

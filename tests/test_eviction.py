@@ -9,7 +9,7 @@ from tests.fakes import FakeDatabase, FakePodman
 def make_config(**over):
     raw = {
         "role": "server",
-        "server": {"tokens": {"s1": "tok"}, "db_dsn": "x",
+        "server": {"sensor_token": "tok", "db_dsn": "x",
                    "blob_dir": "y"},
         "podman": {"image": "img"},
         "affinity": {"max_containers": 10,

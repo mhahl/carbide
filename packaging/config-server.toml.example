@@ -4,7 +4,7 @@ role = "server"
 [server]
 api_addr = "0.0.0.0"        # bind the VPN interface in production
 api_port = 8440
-tokens = { sensor-01 = "CHANGE-ME" }  # one token per sensor id
+sensor_token = "CHANGE-ME"  # shared by all sensors; sensor_ids stay unique
 db_dsn = "postgresql://carbide:CHANGE-ME@127.0.0.1:5432/carbide"
 blob_dir = "/var/lib/carbide/blobs"   # local disk or NFS mount (D10)
 

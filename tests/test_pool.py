@@ -14,7 +14,7 @@ def make_config(**over):
     affinity.update(over.pop("affinity", {}))
     raw = {
         "role": "server",
-        "server": {"tokens": {"s1": "tok"}, "db_dsn": "x",
+        "server": {"sensor_token": "tok", "db_dsn": "x",
                    "blob_dir": "y"},
         "podman": podman,
         "affinity": affinity,
@@ -123,6 +123,35 @@ class PoolTest(unittest.IsolatedAsyncioTestCase):
     async def test_wait_sshd_timeout(self):
         with self.assertRaises(PodmanError):
             await Pool._wait_sshd(self.pool, 1, timeout=0.1)
+
+    async def test_wait_sshd_probes_ssh_host_first(self):
+        # Container case: loopback is dead (the server runs in a container,
+        # siblings live on the host), but the sensor-facing address answers.
+        import asyncio
+        from unittest import mock
+        server = await asyncio.start_server(
+            lambda r, w: None, "127.0.0.1", 0)
+        port = server.sockets[0].getsockname()[1]
+        cfg = make_config(podman={"image": "img", "port_range_start": 22000,
+                                  "port_range_end": 22010,
+                                  "ssh_host": "sensor-facing.invalid"})
+        pool = Pool(FakeDatabase(), FakePodman(), cfg)
+        real_open = asyncio.open_connection
+        calls = []
+
+        async def fake_open(host, *args, **kwargs):
+            calls.append(host)
+            if host == "sensor-facing.invalid":
+                return await real_open("127.0.0.1", port)
+            raise ConnectionRefusedError(host)
+
+        try:
+            with mock.patch.object(asyncio, "open_connection", fake_open):
+                await pool._wait_sshd(54321, timeout=5.0)
+        finally:
+            server.close()
+            await server.wait_closed()
+        self.assertEqual(calls[0], "sensor-facing.invalid")
 
     async def test_remove_affinity(self):
         ep = await self.pool.container_for("s1", "1.2.3.4")

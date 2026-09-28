@@ -1,0 +1,23 @@
+# Carbide Squid image: peek-and-splice egress proxy (never decrypts).
+# Reuses the canonical squid/squid.conf; the entrypoint mints the dummy
+# splice certificate on first start. Listens on the shared `carbide`
+# network; siblings reach it as http://squid:3128 (explicit mode).
+# Build from the repo root: podman build -f images/squid/Containerfile .
+FROM registry.fedoraproject.org/fedora:44
+
+# Subnet of the shared `carbide` network (created by compose/server/setup.sh).
+# The shipped squid.conf keeps the default-net ACL for the live suite; the
+# image narrows it here so only honeypot siblings can use the proxy.
+ARG CONTAINER_SUBNET=10.89.0.0/24
+
+RUN dnf install -y squid openssl && dnf clean all
+
+COPY squid/squid.conf /etc/squid/squid.conf
+RUN sed -i "s|^acl containers src .*|acl containers src ${CONTAINER_SUBNET}|" \
+      /etc/squid/squid.conf \
+    && grep -q "^acl containers src ${CONTAINER_SUBNET}$" /etc/squid/squid.conf
+COPY images/squid/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 3128 3129 3130
+ENTRYPOINT ["/entrypoint.sh"]

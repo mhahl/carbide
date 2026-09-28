@@ -1,0 +1,19 @@
+# Carbide sensor: SSH front door + spool. Needs only the server's address,
+# a unique sensor id, and the shared SENSOR_TOKEN. Start with: ./setup.sh
+name: carbide-sensor
+
+services:
+  sensor:
+    image: quay.io/sigaint/carbide:${TAG:-latest}
+    command: ["carbide-sensor", "-c", "/etc/carbide/config.toml"]
+    ports:
+      - "${LISTEN_ADDR:-0.0.0.0}:${LISTEN_PORT:-2222}:2222"
+    volumes:
+      - ./config.toml:/etc/carbide/config.toml:ro,z
+      - sensor-spool:/var/lib/carbide/spool
+      - sensor-keys:/etc/carbide/keys
+    restart: unless-stopped
+
+volumes:
+  sensor-spool:
+  sensor-keys:

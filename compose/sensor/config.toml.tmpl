@@ -1,0 +1,25 @@
+# Rendered by setup.sh via envsubst. Values come from .env (the token is
+# hex so no TOML quoting issues). DO NOT COMMIT the rendered file.
+role = "sensor"
+
+[sensor]
+listen_addr = "0.0.0.0"
+listen_port = 2222
+host_key_path = "/etc/carbide/keys/ssh_host_key"
+server_host = "${SERVER_HOST}"
+server_port = ${SERVER_PORT}
+sensor_id = "${SENSOR_ID}"
+token = "${SENSOR_TOKEN}"
+spool_dir = "/var/lib/carbide/spool"
+request_timeout_s = 10.0
+session_idle_timeout_s = 600.0
+session_max_time_s = 3600.0
+
+[auth]
+passwords = [${AUTH_PASSWORDS}]
+accept_probability = ${ACCEPT_PROBABILITY}
+max_attempts = 10
+
+[logging]
+level = "INFO"
+dir = ""

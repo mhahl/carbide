@@ -1,0 +1,48 @@
+# Rendered by setup.sh via envsubst. Values come from .env (all secrets
+# are hex so no TOML/URL quoting issues). DO NOT COMMIT the rendered file.
+role = "server"
+
+[server]
+api_addr = "0.0.0.0"
+api_port = 8440
+sensor_token = "${SENSOR_TOKEN}"
+db_dsn = "postgresql://carbide:${DB_PASSWORD}@db:5432/carbide"
+blob_dir = "/var/lib/carbide/blobs"
+
+[podman]
+socket = "unix:///run/podman/podman.sock"
+image = "quay.io/sigaint/carbide-honeypot:${TAG}"
+port_range_start = 22000
+port_range_end = 22100
+network = "carbide"
+container_user = "honey"
+memory_mb = 256
+pids_limit = 128
+pool_size = 2
+ssh_host = "${SSH_HOST}"
+
+[affinity]
+keep_warm_minutes = 10
+max_containers = 200
+idle_ttl_active_days = 30
+idle_ttl_inactive_hours = 24
+snapshot_retention = 10
+commit_per_session = true
+
+[forensics]
+max_file_bytes = 1048576
+include_full_export = false
+
+[squid]
+enabled = true
+mode = "explicit"
+explicit_proxy = "http://squid:3128"
+log_path = "/var/log/squid/access.log"
+
+[quotas]
+blob_max_bytes = 10737418240
+session_max_bytes = 104857600
+
+[logging]
+level = "INFO"
+dir = ""

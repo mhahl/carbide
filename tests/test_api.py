@@ -18,7 +18,7 @@ from tests.fakes import FakeDatabase, FakePodman
 def make_config(**over):
     raw = {
         "role": "server",
-        "server": {"tokens": {"s1": "tok"}, "db_dsn": "x",
+        "server": {"sensor_token": "tok", "db_dsn": "x",
                    "blob_dir": "y", "api_port": 8440},
         "podman": {"image": "img", "pool_size": 0,
                    "port_range_start": 22000, "port_range_end": 22010},
@@ -83,6 +83,27 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
         reply = protocol.decode(await reader.readline())
         writer.close()
         self.assertFalse(reply["ok"])
+
+    async def test_shared_token_links_any_sensor_id(self):
+        reader, writer = await asyncio.open_connection(
+            "127.0.0.1", self.port)
+        writer.write(protocol.encode(protocol.new_envelope(
+            "hello", sensor_id="brand-new-sensor", token="tok")))
+        await writer.drain()
+        reply = protocol.decode(await reader.readline())
+        writer.close()
+        self.assertTrue(reply["ok"])
+
+    async def test_bad_sensor_id_rejected(self):
+        for bad_id in ("", "x" * 129, None, 42):
+            reader, writer = await asyncio.open_connection(
+                "127.0.0.1", self.port)
+            writer.write(protocol.encode(protocol.new_envelope(
+                "hello", sensor_id=bad_id, token="tok")))
+            await writer.drain()
+            reply = protocol.decode(await reader.readline())
+            writer.close()
+            self.assertFalse(reply["ok"], bad_id)
 
     async def test_hello_ok_and_container_flow(self):
         reply = await self.rpc(protocol.new_envelope(

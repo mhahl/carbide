@@ -204,23 +204,30 @@ class Pool:
 
     async def _wait_sshd(self, port: int, timeout: float = 30.0):
         """Wait until the published sshd port accepts TCP (host keys and
-        sshd take a few seconds on first boot)."""
+        sshd take a few seconds on first boot). Probes the sensor-facing
+        address first (the same endpoint sensors will use), falling back to
+        loopback: inside a container 127.0.0.1 is the container itself, so a
+        bare loopback probe would never succeed there."""
         import time
+        hosts = [self._ssh_host]
+        if self._ssh_host != "127.0.0.1":
+            hosts.append("127.0.0.1")
         deadline = time.monotonic() + timeout
         last_exc: Exception | None = None
         while time.monotonic() < deadline:
-            try:
-                reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection("127.0.0.1", port), 2.0)
-                writer.close()
+            for host in hosts:
                 try:
-                    await writer.wait_closed()
-                except Exception:
-                    pass
-                return
-            except Exception as exc:
-                last_exc = exc
-                await asyncio.sleep(0.5)
+                    _reader, writer = await asyncio.wait_for(
+                        asyncio.open_connection(host, port), 2.0)
+                    writer.close()
+                    try:
+                        await writer.wait_closed()
+                    except Exception:
+                        pass
+                    return
+                except Exception as exc:
+                    last_exc = exc
+            await asyncio.sleep(0.5)
         raise PodmanError(f"sshd on port {port} never came up: {last_exc}")
 
     # -- session tracking / keep-warm -------------------------------------------

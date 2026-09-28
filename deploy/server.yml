@@ -1,6 +1,0 @@
----
-- name: Deploy carbide servers
-  hosts: carbide_servers
-  become: true
-  roles:
-    - carbide_server

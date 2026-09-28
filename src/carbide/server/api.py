@@ -1,6 +1,6 @@
 """carbide-server control API: authenticated JSON-lines TCP.
 
-Sensors authenticate with per-sensor tokens and then (a) resolve attacker IPs
+Sensors authenticate with one shared token and then (a) resolve attacker IPs
 to containers and (b) stream evidence records. Sensor input is untrusted: the
 connection's sensor identity overrides anything in the records, every record
 applies at most once, and malformed records are refused (the sensor drops
@@ -41,7 +41,7 @@ class ServerAPI:
         scfg = cfg.section("server")
         self._addr = scfg["api_addr"]
         self._port = scfg["api_port"]
-        self._tokens = dict(scfg["tokens"])
+        self._sensor_token = scfg["sensor_token"]
         self._db = db
         self._pool = pool
         self._forensics = forensics
@@ -140,10 +140,11 @@ class ServerAPI:
     async def _hello(self, msg: dict) -> str:
         sensor_id = msg.get("sensor_id")
         token = msg.get("token")
-        expected = self._tokens.get(sensor_id) if isinstance(
-            sensor_id, str) else None
-        if expected is None or not isinstance(token, str) or \
-                not protocol.tokens_equal(token, expected):
+        if not isinstance(sensor_id, str) or not sensor_id or \
+                len(sensor_id) > 128:
+            raise RecordError("bad sensor_id")
+        if not isinstance(token, str) or \
+                not protocol.tokens_equal(token, self._sensor_token):
             raise RecordError("bad sensor credentials")
         await self._db.note_sensor(sensor_id)
         log.info("sensor %s linked", sensor_id)
@@ -218,9 +219,11 @@ class ServerAPI:
     async def _collect(self, sensor_id, ip, session_id, container_id,
                        reason):
         try:
-            await self._forensics.collect(
+            summary = await self._forensics.collect(
                 sensor_id=sensor_id, attacker_ip=ip, session_id=session_id,
                 container_id=container_id, reason=reason or "session end")
+            log.info("forensics for %s: %d changes, %d warnings",
+                     session_id, summary["changes"], len(summary["warnings"]))
         except Exception as exc:
             log.warning("forensics for %s failed: %s", session_id, exc)
 

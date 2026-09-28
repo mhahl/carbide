@@ -25,7 +25,7 @@ SENSOR_TOML = """
 SERVER_TOML = """
     role = "server"
     [server]
-    tokens = { s1 = "tok" }
+    sensor_token = "tok"
     db_dsn = "postgresql://carbide@db/carbide"
     blob_dir = "/var/lib/carbide/blobs"
     [podman]
@@ -94,9 +94,9 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load("/tmp/cfg-bad.toml")
 
-    def test_empty_tokens_rejected(self):
+    def test_empty_sensor_token_rejected(self):
         with open("/tmp/cfg-bad.toml", "w") as fh:
-            fh.write('role = "server"\n[server]\ntokens = {}\n'
+            fh.write('role = "server"\n[server]\nsensor_token = ""\n'
                      'db_dsn = "x"\nblob_dir = "y"\n[podman]\nimage = "z"\n')
         with self.assertRaises(ConfigError):
             load("/tmp/cfg-bad.toml")

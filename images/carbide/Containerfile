@@ -1,0 +1,31 @@
+# Carbide application image: BOTH roles in one image.
+# The compose command selects the role:
+#   carbide-server -c /etc/carbide/config.toml
+#   carbide-sensor -c /etc/carbide/config.toml
+# Build from the repo root: podman build -f images/carbide/Containerfile .
+FROM docker.io/library/python:3.12-slim AS builder
+
+# Toolchain for building psycopg[c] from source (never psycopg[binary]:
+# its bundled OpenSSL corrupts the heap next to asyncssh's system one).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+RUN pip wheel --no-cache-dir -w /wheels .
+
+FROM docker.io/library/python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpq5 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels \
+      /wheels/carbide*.whl \
+    && rm -rf /wheels
+
+# Compose overrides this per role; default to server for `podman run` probes.
+CMD ["carbide-server", "-c", "/etc/carbide/config.toml"]

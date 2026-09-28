@@ -69,7 +69,9 @@ def unified_diff_text(before: bytes | None, after: bytes | None,
 
 
 def _safe_tag(text: str) -> str:
-    return re.sub(r"[^a-zA-Z0-9_.-]", "_", text)[:64]
+    # Container image references must be lowercase; dots are dropped too so
+    # a dotted IP can never parse as a registry domain.
+    return re.sub(r"[^a-zA-Z0-9_-]", "_", text).lower()[:64]
 
 
 class Forensics:
@@ -251,12 +253,14 @@ class Forensics:
 
     async def _snapshot(self, sensor_id, ip, container_id, warnings, at):
         tag = (f"carbide-snap-{_safe_tag(sensor_id)}-{_safe_tag(ip)}-"
-               f"{at.strftime('%Y%m%dT%H%M%S-%f')}")
+               f"{at.strftime('%Y%m%d-%H%M%S-%f')}")
         try:
             await self._pool.run_sync(self._pod.commit, container_id, tag)
         except Exception as exc:
+            log.warning("snapshot %s failed: %s", tag, exc)
             warnings.append(f"snapshot failed: {exc}")
             return
+        log.info("snapshot %s created", tag)
         await self._db.add_snapshot(sensor_id, ip, container_id, tag)
         snaps = await self._db.list_snapshots(sensor_id, ip)
         while len(snaps) > self._retention:

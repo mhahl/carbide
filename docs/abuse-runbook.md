@@ -9,13 +9,14 @@ exit node. This runbook is the operational side of that decision.
 - Keep the shipped Squid restrictions: container-network ACL only, cloud
   metadata/link-local denies, CONNECT limited to 443, body caps. Review
   `squid/squid.conf` diffs before deploying changes.
-- Keep nftables egress rules tight (transparent mode): proxy redirect for
-  80/443, DNS only to the site resolver, drop everything else direct.
+- Container deploys run Squid in explicit mode: siblings get no DNS at all
+  and the proxy is the only resolver. (Transparent mode with nftables rules
+  from `squid/nftables.conf.snippet` remains for host installs only.)
 - Keep quotas small enough to matter: `[quotas]` blob/session caps bound how
   much damage one session can log or fetch.
 - Never expose the server API port to the internet (VPN-only + firewall).
-  Rotate a sensor token the moment its sensor is suspect
-  (`[server] tokens`, restart server + that sensor).
+  The sensor token is shared: the moment any sensor is suspect, rotate it
+  everywhere (server `.env` + every sensor `.env`, then restart all).
 
 ## Detect
 
@@ -23,7 +24,7 @@ exit node. This runbook is the operational side of that decision.
   someone using you as an exit. `squid_hits` is queryable per session.
 - Watch abuse-mailbox complaints and blocklists for the server IP.
 - Watch disk: blob store growth and Postgres size; eviction TTLs bound
-  containers, logrotate bounds logs.
+  containers, and container log rotation bounds the logs.
 
 ## Respond
 

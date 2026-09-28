@@ -37,7 +37,7 @@ _SCHEMA = {
     "server": {
         "api_addr": (str, False, "127.0.0.1"),
         "api_port": (int, False, 8440),
-        "tokens": (dict, True, None),
+        "sensor_token": (str, True, None),
         "db_dsn": (str, True, None),
         "blob_dir": (str, True, None),
     },
@@ -215,8 +215,8 @@ def validate(raw: dict) -> Config:
         if end < start:
             raise ConfigError(
                 "[podman] port_range_end must be >= port_range_start")
-        if not data["server"]["tokens"]:
-            raise ConfigError("[server] tokens must map at least one sensor")
+        if not data["server"]["sensor_token"]:
+            raise ConfigError("[server] sensor_token must not be empty")
         if data["squid"]["mode"] not in ("transparent", "explicit"):
             raise ConfigError(
                 '[squid] mode must be "transparent" or "explicit"')

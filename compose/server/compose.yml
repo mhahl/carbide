@@ -1,0 +1,65 @@
+# Carbide server stack: API/forensics + Postgres + Squid on the shared
+# external `carbide` network (created by setup.sh). Honeypot siblings join
+# the same network, so they reach Squid as http://squid:3128 and the server
+# reaches Postgres as db:5432. Start with: ./setup.sh
+name: carbide-server
+
+services:
+  db:
+    image: docker.io/library/postgres:16
+    environment:
+      POSTGRES_USER: carbide
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
+      POSTGRES_DB: carbide
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    networks:
+      - carbide
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U carbide"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  squid:
+    image: quay.io/sigaint/carbide-squid:${TAG:-latest}
+    volumes:
+      - squid-logs:/var/log/squid
+    networks:
+      - carbide
+    restart: unless-stopped
+
+  server:
+    image: quay.io/sigaint/carbide:${TAG:-latest}
+    command: ["carbide-server", "-c", "/etc/carbide/config.toml"]
+    ports:
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-8440}:8440"
+    volumes:
+      # Host podman socket: siblings are created on the HOST, beside us.
+      # :z relabels it for container access; restart the stack if the host
+      # podman.socket unit recreates it (label resets to var_run_t).
+      - /run/podman/podman.sock:/run/podman/podman.sock:z
+      - ./config.toml:/etc/carbide/config.toml:ro,z
+      - carbide-blobs:/var/lib/carbide/blobs
+      - squid-logs:/var/log/squid:ro
+    networks:
+      - carbide
+    depends_on:
+      db:
+        condition: service_healthy
+    # The server drives the HOST podman socket; Fedora policy forbids confined
+    # containers from connecting to it, so SELinux confinement is off for this
+    # service (capabilities/devices stay restricted). The sensor needs none.
+    security_opt:
+      - label=disable
+    restart: unless-stopped
+
+networks:
+  carbide:
+    external: true
+
+volumes:
+  db-data:
+  carbide-blobs:
+  squid-logs:
