@@ -41,7 +41,9 @@ services:
       # podman.socket unit recreates it (label resets to var_run_t).
       - /run/podman/podman.sock:/run/podman/podman.sock:z
       - ./config.toml:/etc/carbide/config.toml:ro,z
-      - carbide-blobs:/var/lib/carbide/blobs
+      # Blob store: named volume by default; point BLOB_MOUNT at a host path
+      # (e.g. an NFS mount) to store blobs there instead. See .env.example.
+      - ${BLOB_MOUNT:-carbide-blobs:/var/lib/carbide/blobs:z}
       - squid-logs:/var/log/squid:ro
     networks:
       - carbide

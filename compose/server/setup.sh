@@ -5,19 +5,25 @@
 # (rootful podman socket + firewall).
 #
 # Usage: ./setup.sh [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST]
-#          [--tag TAG] [--skip-firewall] [--skip-pull]
+#          [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH]
+#          [--skip-firewall] [--skip-pull]
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 ALLOW_SUBNETS=()
-API_BIND=""; SSH_HOST=""; TAG=""; SKIP_FIREWALL=0; SKIP_PULL=0
+# Flag values live in F_* so they can't be confused with load_env values
+# below: only explicit flags append to .env, never re-runs.
+F_API_BIND=""; F_SSH_HOST=""; F_TAG=""; F_NFS_EXPORT=""; F_NFS_MOUNTPOINT=""
+SKIP_FIREWALL=0; SKIP_PULL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --allow-subnet) ALLOW_SUBNETS+=("$2"); shift 2 ;;
-    --api-bind) API_BIND="$2"; shift 2 ;;
-    --ssh-host) SSH_HOST="$2"; shift 2 ;;
-    --tag) TAG="$2"; shift 2 ;;
+    --api-bind) F_API_BIND="$2"; shift 2 ;;
+    --ssh-host) F_SSH_HOST="$2"; shift 2 ;;
+    --tag) F_TAG="$2"; shift 2 ;;
+    --nfs-export) F_NFS_EXPORT="$2"; shift 2 ;;
+    --nfs-mountpoint) F_NFS_MOUNTPOINT="$2"; shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=1; shift ;;
     --skip-pull) SKIP_PULL=1; shift ;;
     *) echo "usage: $0 [--allow-subnet CIDR]... [--skip-firewall]" >&2; exit 2 ;;
@@ -64,9 +70,9 @@ load_env() {  # literal KEY=value lines (last value per key wins).
   done < .env
 }
 load_env
-[ -n "$API_BIND" ] && echo "API_BIND=$API_BIND" >> .env
-[ -n "$SSH_HOST" ] && echo "SSH_HOST=$SSH_HOST" >> .env
-[ -n "$TAG" ] && echo "TAG=$TAG" >> .env
+[ -n "$F_API_BIND" ] && echo "API_BIND=$F_API_BIND" >> .env
+[ -n "$F_SSH_HOST" ] && echo "SSH_HOST=$F_SSH_HOST" >> .env
+[ -n "$F_TAG" ] && echo "TAG=$F_TAG" >> .env
 if [ -z "${SENSOR_TOKEN:-}" ]; then
   echo "SENSOR_TOKEN=$(openssl rand -hex 24)" >> .env
 fi
@@ -75,6 +81,41 @@ if [ -z "${DB_PASSWORD:-}" ]; then
 fi
 load_env
 export SENSOR_TOKEN DB_PASSWORD TAG="${TAG:-latest}" SSH_HOST="${SSH_HOST:?set SSH_HOST in .env}"
+
+# 2b. NFS blob store (opt-in): pull NFS tooling, allow containers to use
+# NFS, mount the export, persist it in fstab, point BLOB_MOUNT at it.
+[ -n "$F_NFS_EXPORT" ] && echo "NFS_EXPORT=$F_NFS_EXPORT" >> .env
+[ -n "$F_NFS_MOUNTPOINT" ] && echo "NFS_MOUNTPOINT=$F_NFS_MOUNTPOINT" >> .env
+load_env
+if [ -n "${NFS_EXPORT:-}" ]; then
+  case "$NFS_EXPORT" in
+    *:*/*) ;;
+    *) echo "error: --nfs-export must be HOST:/PATH, got '$NFS_EXPORT'" >&2
+       exit 2 ;;
+  esac
+  MP="${NFS_MOUNTPOINT:-/var/lib/carbide/blobs}"
+  case "$MP" in *\ *|*"'"*|*\"*)
+    echo "error: mountpoint must not contain spaces/quotes: '$MP'" >&2
+    exit 2 ;;
+  esac
+  command -v mount.nfs >/dev/null || dnf install -y nfs-utils
+  command -v setsebool >/dev/null || dnf install -y policycoreutils
+  setsebool -P virt_use_nfs 1
+  mkdir -p "$MP"
+  FSTAB_LINE="$NFS_EXPORT $MP nfs defaults,_netdev 0 0"
+  if ! grep -qF -- "$FSTAB_LINE" /etc/fstab; then
+    [ -f /etc/fstab.carbide-bak ] || cp /etc/fstab /etc/fstab.carbide-bak
+    awk -v mp="$MP" '$2 != mp' /etc/fstab > /etc/fstab.carbide-tmp
+    cat /etc/fstab.carbide-tmp > /etc/fstab
+    rm -f /etc/fstab.carbide-tmp
+    echo "$FSTAB_LINE" >> /etc/fstab
+  fi
+  mountpoint -q "$MP" || mount "$MP" || {
+    echo "error: cannot mount $NFS_EXPORT on $MP" >&2; exit 1; }
+  grep -qF -- "BLOB_MOUNT=$MP:/var/lib/carbide/blobs" .env || \
+    echo "BLOB_MOUNT=$MP:/var/lib/carbide/blobs" >> .env
+  load_env
+fi
 
 # 3. pull images (with --skip-pull, `up` fetches missing stack images but
 # the honeypot must already be local: it runs on the HOST, beside the stack).

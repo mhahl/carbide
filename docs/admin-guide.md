@@ -120,6 +120,7 @@ Server `.env`:
 | `SSH_HOST` | `10.89.0.1` | address sensors use for container sshd: the gateway when co-located, the VPN IP of this host when remote |
 | `SENSOR_TOKEN` * | generated | the one token shared by all sensors |
 | `DB_PASSWORD` * | generated | Postgres password (also fed to the `db` service) |
+| `BLOB_MOUNT` | named volume | whole `source:target[:opts]` fragment; set to a host path (e.g. an NFS mount, see below) to store blobs there instead |
 
 Sensor `.env`:
 
@@ -138,6 +139,28 @@ Need a knob that isn't in `.env` (TTLs, quotas, pool)? Edit
 errors on typos, missing values, and out-of-range numbers; the service
 fails fast (exit 2) naming the key. Full key reference:
 `packaging/*.example`.
+
+## Blob store on NFS
+
+Per D10 the blob store is just a path, so NFS is a mount, not a feature:
+the export lives on the host, the container bind-mounts it. Postgres stays
+on its local named volume (databases and NFS mix poorly).
+
+```sh
+cd compose/server
+./setup.sh --nfs-export nas:/export/carbide-blobs
+# optional: --nfs-mountpoint PATH (default /var/lib/carbide/blobs)
+```
+
+That installs NFS tooling if missing, sets `virt_use_nfs` so containers
+may use NFS, mounts the export, persists it in `/etc/fstab` (original kept
+at `/etc/fstab.carbide-bak`), and points `BLOB_MOUNT` at it. Re-runs are
+idempotent; changing exports replaces the fstab entry for the mountpoint.
+
+The store is content-addressed (`<2-hex>/<sha256>`), so existing blobs
+survive the move untouched — back the export up like any filesystem, and
+size it for your retention (quotas bound growth, eviction TTLs bound
+churn).
 
 ## Operate
 
