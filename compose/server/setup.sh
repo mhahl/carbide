@@ -26,7 +26,7 @@ while [ $# -gt 0 ]; do
     --nfs-mountpoint) F_NFS_MOUNTPOINT="$2"; shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=1; shift ;;
     --skip-pull) SKIP_PULL=1; shift ;;
-    *) echo "usage: $0 [--allow-subnet CIDR]... [--skip-firewall]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST] [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH] [--skip-firewall] [--skip-pull]" >&2; exit 2 ;;
   esac
 done
 
@@ -46,6 +46,26 @@ else
   echo "error: no compose provider (dnf install podman-compose)" >&2
   exit 1
 fi
+
+# 0. host podman API socket (the server drives sibling containers through it)
+SOCK=/run/podman/podman.sock
+if [ -e "$SOCK" ] && [ ! -S "$SOCK" ]; then
+  # A previous `compose up` while the socket was down auto-created this
+  # path as a directory; systemd cannot bind over it, and any container
+  # created against it wedges with crun "Not a directory".
+  if [ -d "$SOCK" ] && rmdir "$SOCK" 2>/dev/null; then
+    echo "removed stale directory shadowing $SOCK" >&2
+  else
+    echo "error: $SOCK exists but is not a socket; remove it, then re-run" >&2
+    exit 1
+  fi
+fi
+if [ ! -S "$SOCK" ]; then
+  systemctl enable --now podman.socket >/dev/null 2>&1 || {
+    echo "error: cannot start podman.socket" >&2; exit 1; }
+fi
+[ -S "$SOCK" ] || {
+  echo "error: $SOCK still missing" >&2; exit 1; }
 
 # 1. shared network for stack + honeypot siblings (subnet fixed: squid ACL)
 if ! podman network exists carbide >/dev/null 2>&1; then
@@ -126,10 +146,20 @@ if [ "$SKIP_PULL" -eq 0 ]; then
   podman pull docker.io/library/postgres:16
 fi
 
-# 4. render config + start
+# 4. render config + start (clear a directory shadow an old compose run
+# may have auto-created at the config path)
+if [ -d config.toml ]; then
+  rmdir config.toml 2>/dev/null || {
+    echo "error: ./config.toml is a non-empty directory; remove it" >&2
+    exit 1; }
+fi
 envsubst < config.toml.tmpl > config.toml
 chmod 600 config.toml
 $COMPOSE up -d
+# Recreate the server on every run: picks up the re-rendered config,
+# re-binds a recreated host socket, and unwedges a container created
+# against a stale mount (crun "Not a directory"). Deps stay untouched.
+$COMPOSE up -d --force-recreate --no-deps server
 
 # 5. firewall: API port to sensor/VPN subnets only (never the internet)
 if [ "$SKIP_FIREWALL" -eq 0 ] && [ "${#ALLOW_SUBNETS[@]}" -gt 0 ]; then

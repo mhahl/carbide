@@ -9,7 +9,17 @@ services:
     ports:
       - "${LISTEN_ADDR:-0.0.0.0}:${LISTEN_PORT:-2222}:2222"
     volumes:
-      - ./config.toml:/etc/carbide/config.toml:ro,z
+      # Long syntax on purpose: create_host_path:false fails loud on a
+      # missing config instead of auto-creating a directory that would
+      # wedge later restarts (crun "Not a directory"). selinux:z keeps the
+      # relabel this confined service needs to read the host file.
+      - type: bind
+        source: ./config.toml
+        target: /etc/carbide/config.toml
+        read_only: true
+        bind:
+          create_host_path: false
+          selinux: z
       - sensor-spool:/var/lib/carbide/spool
       - sensor-keys:/etc/carbide/keys
     restart: unless-stopped

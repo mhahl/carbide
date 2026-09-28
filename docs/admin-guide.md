@@ -234,6 +234,8 @@ files (tokens live there — treat as secrets).
 | `sensor rejected / bad credentials` | token mismatch | sensor `SENSOR_TOKEN` must equal the server's; re-run both setups |
 | ssh connects but all logins fail | auth too strict | extend `AUTH_PASSWORDS` or raise `ACCEPT_PROBABILITY` |
 | sessions start, no container | `compose logs server`; `podman ps`; socket mount | server stack must run rootful with `/run/podman/podman.sock` mounted (setup does this) |
+| `podman ping failed` at startup | `ls -la /run/podman/podman.sock` on the host | `systemctl enable --now podman.socket`, then restart the stack (current `setup.sh` does this itself — `git pull` if yours doesn't) |
+| ``crun: mount `/run/podman/podman.sock` ... Not a directory`` | `ls -la /run/podman/` shows a *directory* at `podman.sock` | an earlier `up` ran while the socket was down and compose shadowed it with a dir; `compose down`, `rmdir /run/podman/podman.sock`, `systemctl enable --now podman.socket`, re-run `./setup.sh` (a plain restart keeps failing — the stale mount type is baked into the container, it must be recreated; current files refuse to re-create the shadow — `git pull` if yours don't) |
 | sensor can't reach container sshd | `SSH_HOST` on server | remote sensors: VPN IP of the server host; co-located: the carbide gateway (`10.89.0.1`) |
 | curl empty in container | `podman exec <c> env \| grep -i proxy`; squid logs | explicit proxy is stamped at container creation; `podman compose logs squid` |
 | no squid hits for a session | `compose logs squid`; `log_path` volume | squid-logs volume must be shared with `server` (compose does this) |

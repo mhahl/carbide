@@ -24,7 +24,7 @@ while [ $# -gt 0 ]; do
     --tag) TAG="$2"; shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=1; shift ;;
     --skip-pull) SKIP_PULL=1; shift ;;
-    *) echo "usage: $0 --sensor-id ID --token TOKEN [--server-host HOST] [...]" >&2
+    *) echo "usage: $0 --sensor-id ID --token TOKEN [--server-host HOST] [--server-port PORT] [--listen-port PORT] [--tag TAG] [--skip-firewall] [--skip-pull]" >&2
        exit 2 ;;
   esac
 done
@@ -83,6 +83,13 @@ export SERVER_HOST SERVER_PORT SENSOR_ID SENSOR_TOKEN
 
 if [ "$SKIP_PULL" -eq 0 ]; then
   podman pull "quay.io/sigaint/carbide:$TAG"
+fi
+# Clear a directory shadow an old compose run may have auto-created at
+# the config path (it would wedge restarts with crun "Not a directory").
+if [ -d config.toml ]; then
+  rmdir config.toml 2>/dev/null || {
+    echo "error: ./config.toml is a non-empty directory; remove it" >&2
+    exit 1; }
 fi
 envsubst < config.toml.tmpl > config.toml
 chmod 600 config.toml

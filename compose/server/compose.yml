@@ -37,10 +37,28 @@ services:
       - "${API_BIND:-127.0.0.1}:${API_PORT:-8440}:8440"
     volumes:
       # Host podman socket: siblings are created on the HOST, beside us.
-      # :z relabels it for container access; restart the stack if the host
-      # podman.socket unit recreates it (label resets to var_run_t).
-      - /run/podman/podman.sock:/run/podman/podman.sock:z
-      - ./config.toml:/etc/carbide/config.toml:ro,z
+      # Long syntax on purpose: create_host_path:false makes a missing
+      # socket a LOUD compose error instead of an auto-created directory,
+      # which would wedge the container with:
+      #   crun: mount `/run/podman/podman.sock` ... Not a directory
+      # (the stale mountpoint type is baked into the container; recovery
+      # is down/fix-socket/up). No :z equivalent exists in long syntax;
+      # none is needed: this service runs label=disable (unconfined), and
+      # setup.sh recreates it on every run, re-binding a recreated host
+      # socket fresh.
+      - type: bind
+        source: /run/podman/podman.sock
+        target: /run/podman/podman.sock
+        bind:
+          create_host_path: false
+      # Rendered config: same no-autocreate guard (a directory shadow here
+      # would wedge restarts the same way once the real file is rendered).
+      - type: bind
+        source: ./config.toml
+        target: /etc/carbide/config.toml
+        read_only: true
+        bind:
+          create_host_path: false
       # Blob store: named volume by default; point BLOB_MOUNT at a host path
       # (e.g. an NFS mount) to store blobs there instead. See .env.example.
       - ${BLOB_MOUNT:-carbide-blobs:/var/lib/carbide/blobs:z}
