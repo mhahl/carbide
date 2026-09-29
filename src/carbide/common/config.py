@@ -79,12 +79,27 @@ _SCHEMA = {
         "level": (str, False, "INFO"),
         "dir": (str, False, ""),
     },
+    "web": {
+        "enabled": (bool, False, True),
+        "bind_addr": (str, False, "127.0.0.1"),
+        "port": (int, False, 8080),
+        "session_ttl_hours": (int, False, 12),
+    },
+    "sensor_mgmt": {
+        "enabled": (bool, False, False),
+        "key_path": (str, False, ""),
+        "user": (str, False, "carbide"),
+        "port": (int, False, 22),
+        "connect_timeout_s": ((int, float), False, 10.0),
+        "files_dir": (str, False, ""),
+    },
 }
 
 _ROLE_SECTIONS = {
     "sensor": {"sensor", "auth", "logging"},
     "server": {
-        "server", "podman", "affinity", "forensics", "squid", "quotas", "logging",
+        "server", "podman", "affinity", "forensics", "squid", "quotas",
+        "logging", "web", "sensor_mgmt",
     },
 }
 
@@ -93,11 +108,19 @@ def _check_ranges(section: str, key: str, value: Any) -> None:
     if key in ("listen_port", "server_port", "api_port"):
         if not 1 <= value <= 65535:
             raise ConfigError(f"[{section}] {key} must be 1..65535, got {value!r}")
+    if key == "port" and section in ("web", "sensor_mgmt"):
+        if not 1 <= value <= 65535:
+            raise ConfigError(f"[{section}] {key} must be 1..65535, got {value!r}")
     if key == "accept_probability" and not 0.0 <= value <= 1.0:
         raise ConfigError(
             f"[auth] accept_probability must be 0..1, got {value!r}")
     if key == "max_attempts" and value < 1:
         raise ConfigError(f"[auth] max_attempts must be >= 1, got {value!r}")
+    if key == "session_ttl_hours" and value < 1:
+        raise ConfigError(f"[web] session_ttl_hours must be >= 1, got {value!r}")
+    if key == "connect_timeout_s" and value <= 0:
+        raise ConfigError(
+            f"[sensor_mgmt] connect_timeout_s must be > 0, got {value!r}")
     if key in ("request_timeout_s", "session_idle_timeout_s", "session_max_time_s"):
         if value <= 0:
             raise ConfigError(f"[sensor] {key} must be > 0, got {value!r}")

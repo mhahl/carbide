@@ -182,3 +182,76 @@ ACCEPTED — the user approved the scope contract above and this record as Final
 Quoted acceptance: "accept" (channel: this chat session,
 time: 2026-09-27T08:40:57Z). There is no owning issue in this workspace, so
 this section is the coordination record.
+
+## Web console extension (Final)
+
+**Status: Final** — accepted by the user (see Acceptance below).
+Everything above remains Final as accepted. It extends the D7 boundary
+with an analyst and administrator web console built into carbide-server
+(htmx + Alpine.js + DaisyUI, per the feature request).
+
+Settled constraints (user-stated in the feature request):
+- W0a — Frontend stack is htmx + Alpine.js + DaisyUI, wireframe theme,
+  side navigation.
+- W0b — Console auth is database-backed username + password; every
+  console user has full administration permission (no roles).
+- W0c — Console shows realtime logs, sessions, and container state, and
+  supports interacting with sessions in real time.
+- W0d — Console administers sensors: list/state, push password
+  allow-list + accept probability, restart over SSH via a service
+  account, and configure new sensors.
+
+Open questions: none — all settled (Q1–Q5 answered, Q6 accepted below).
+
+Decisions (written as they settle):
+- W1 — Session interaction is kill + controls (user chose option 1,
+  2026-09-28): the console can terminate a live attacker session, stop /
+  start / restart its container, evict the affinity, and tail the live
+  transcript and container state. No terminal emulation in the browser.
+  Rationale: covers realtime interaction with one small server→sensor
+  message on the existing link; a browser terminal would be a separate
+  project's scope and attack surface.
+- W2 — New-sensor provisioning is full remote install (user chose
+  option 1, 2026-09-28): the console registers the sensor, SFTPs the
+  `compose/sensor/` files, writes the remote `.env`, runs `setup.sh`
+  over SSH as the service account, and shows the output. Precondition:
+  the target host already has podman, podman-compose, and envsubst;
+  remote firewall stays out-of-band (non-root service account).
+- W3 — Sensitive credentials are visible in analyst views (user chose
+  option 1, 2026-09-28): auth-attempt passwords and affinity container
+  SSH credentials render inline. Rationale: this is investigation data
+  the console exists to expose, and with every console user a full admin
+  (W0b) masking would be theater — the pages read straight from the
+  database.
+- W4 — Admin-action audit is server log lines only (user chose
+  option 1, 2026-09-28): every console mutation logs who did what to
+  which target at INFO. No DB audit table. Rationale: greppable,
+  rotated, zero new schema; nothing in the request needs queryable
+  audit history on this VPN-only admin tool.
+- W5 — Default web bind follows the sensor API pattern (user chose
+  option 2, 2026-09-28): reachable from the VPN/sensor networks out of
+  the box via setup flags, with firewall rules mirroring the API's
+  `--allow-subnet` pattern. Rationale: consistent with how the API is
+  already exposed; the operator narrows it the same way.
+
+Scope contract (accepted): deliverable is the console inside
+carbide-server — `src/carbide/server/web/` plus templates/static, DB
+migration 2 (`web_users`, `web_sessions`, `managed_sensors`),
+`[web]`/`[sensor_mgmt]` config, server→sensor notify plus the sensor
+kill handler, the asyncssh management layer, setup/compose/docs
+updates, and tests — published as one commit per phase (foundation,
+read-only views, actions, realtime interaction, provisioning and
+packaging). Out of scope: terminal emulation, roles/RBAC, a DB audit
+table, CSRF tokens v1, login rate-limiting, metrics/alerting, mobile,
+sensor-side UI (each a follow-up with its own interview if ever
+wanted). Done means: (1) all five phase commits landed; (2) full unit
+suite green; (3) container builds with the new deps; (4) manual E2E
+evidence — login, cold session read, diff compare, live kill, sensor
+config push + restart, clean teardown; (5) admin + analyst docs
+updated. "Go" and similar words authorize only this boundary.
+
+Acceptance: "accept and build" (channel: this chat session, time:
+2026-09-29T00:03:38Z). The "build" half is the separate explicit
+implementation request: build the accepted boundary now. There is no
+owning issue in this workspace, so this section is the coordination
+record.

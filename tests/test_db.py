@@ -104,6 +104,91 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         await self.db.add_squid_hit("s", "s1", "10.0.0.2", now(), "GET",
                                     "http://x/", 200, 10, "text/html")
 
+    async def test_web_users_and_sessions(self):
+        uid = await self.db.create_web_user("op", "hash1")
+        user = await self.db.get_web_user_by_name("op")
+        self.assertEqual(user["id"], uid)
+        self.assertFalse(user["disabled"])
+        self.assertEqual(
+            [u["username"] for u in await self.db.list_web_users()],
+            ["op"])
+        await self.db.set_web_user_password(uid, "hash2")
+        self.assertEqual(
+            (await self.db.get_web_user(uid))["pw_hash"], "hash2")
+        future = now() + datetime.timedelta(hours=1)
+        await self.db.create_web_session("sha1", uid, future)
+        row = await self.db.get_web_session("sha1")
+        self.assertEqual(row[1], uid)
+        self.assertEqual(row[3], "op")
+        await self.db.set_web_user_disabled(uid, True)
+        self.assertTrue((await self.db.get_web_user(uid))["disabled"])
+        past = now() - datetime.timedelta(hours=1)
+        await self.db.create_web_session("sha-old", uid, past)
+        await self.db.delete_expired_web_sessions()
+        self.assertIsNone(await self.db.get_web_session("sha-old"))
+        self.assertIsNotNone(await self.db.get_web_session("sha1"))
+        await self.db.delete_web_session("sha1")
+        self.assertIsNone(await self.db.get_web_session("sha1"))
+
+    async def test_managed_sensors(self):
+        self.assertIsNone(
+            await self.db.get_managed_sensor("s9"))
+        await self.db.upsert_managed_sensor(
+            "s9", "10.0.0.9", auth_passwords='["a"]')
+        row = await self.db.get_managed_sensor("s9")
+        self.assertEqual(row["ssh_host"], "10.0.0.9")
+        self.assertEqual(row["auth_passwords"], '["a"]')
+        await self.db.upsert_managed_sensor(
+            "s9", "10.0.0.10", listen_port=2223)
+        row = await self.db.get_managed_sensor("s9")
+        self.assertEqual(row["ssh_host"], "10.0.0.10")
+        self.assertEqual(row["listen_port"], 2223)
+        self.assertEqual(
+            [m["sensor_id"]
+             for m in await self.db.list_managed_sensors()], ["s9"])
+        await self.db.delete_managed_sensor("s9")
+        self.assertEqual(await self.db.list_managed_sensors(), [])
+
+    async def test_console_reads(self):
+        await self.db.note_sensor("s1")
+        await self.db.ensure_session("a", "s1", "1.1.1.1")
+        await self.db.set_session_started("a", "root", now(), "1.1.1.1")
+        await self.db.ensure_session("b", "s1", "2.2.2.2")
+        await self.db.set_session_started("b", "u", now(), "2.2.2.2")
+        await self.db.set_session_end("b", now(), "done")
+        await self.db.add_auth_attempt("a", "s1", "root", "pw", True,
+                                       True, now())
+        await self.db.add_transcript("a", "ch", "in", "pty", 0,
+                                     b"x", now())
+        await self.db.add_session_file("a", "f", None, 3, now())
+        await self.db.add_squid_hit("a", "s1", "10.0.0.2", now(), "GET",
+                                    "http://x/", 200, 5, "text/html")
+        await self.db.add_snapshot("s1", "1.1.1.1", "c1", "img:9")
+        self.assertEqual(len(await self.db.list_sensors()), 1)
+        self.assertEqual(len(await self.db.list_sessions()), 2)
+        self.assertEqual(
+            len(await self.db.list_sessions(open_only=True)), 1)
+        self.assertEqual(
+            len(await self.db.list_sessions(ip="2.2.2.2")), 1)
+        self.assertEqual(len(await self.db.get_transcript("a")), 1)
+        self.assertEqual(len(await self.db.list_session_files("a")), 1)
+        self.assertEqual(
+            len(await self.db.list_auth_attempts(username="root")), 1)
+        self.assertEqual(
+            len(await self.db.list_auth_attempts(accepted=False)), 0)
+        self.assertEqual(
+            len(await self.db.list_squid_hits(session_id="a")), 1)
+        self.assertEqual(
+            len(await self.db.list_snapshots_all(sensor_id="s1")), 1)
+        self.assertEqual(await self.db.count_open_sessions(), 1)
+        self.assertEqual(
+            await self.db.count_sessions_since(
+                now() - datetime.timedelta(hours=1)), 2)
+        self.assertEqual(await self.db.count_affinities(), 0)
+        self.assertEqual(
+            await self.db.count_auth_since(
+                now() - datetime.timedelta(hours=1)), 1)
+
     async def test_close_is_idempotent_and_guards_queries(self):
         await self.db.close()
         await self.db.close()

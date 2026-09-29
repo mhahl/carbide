@@ -182,6 +182,175 @@ class FakeDatabase:
         self.squid.append((session_id, sensor_id, container_ip, at,
                            method, url, status, size, mime))
 
+    # -- console reads -------------------------------------------------
+    async def list_sensors(self):
+        rows = [(sid, v.get("first"), v.get("last"))
+                for sid, v in self.sensors.items()]
+        rows.sort(key=lambda r: r[2] or datetime.datetime.min.replace(
+            tzinfo=datetime.timezone.utc), reverse=True)
+        return rows
+
+    @staticmethod
+    def _session_tuple(s):
+        return (s["session_id"], s["sensor_id"], s["attacker_ip"],
+                s["username"], s["container_id"], s["fresh"],
+                s["over_quota"], s["started_at"], s["ended_at"],
+                s["end_reason"])
+
+    async def list_sessions(self, sensor_id=None, ip=None, open_only=False,
+                            limit=100, offset=0):
+        rows = [s for s in self.sessions.values()
+                if (not sensor_id or s["sensor_id"] == sensor_id)
+                and (not ip or s["attacker_ip"] == ip)
+                and (not open_only or s["ended_at"] is None)]
+        rows.sort(key=lambda s: (
+            s["started_at"] is None, s["started_at"], s["session_id"]))
+        rows.reverse()
+        return [self._session_tuple(s)
+                for s in rows[offset:offset + limit]]
+
+    async def get_transcript(self, session_id, after_id=0, limit=500):
+        out = []
+        for idx, t in enumerate(self.transcripts):
+            if t[0] == session_id and idx > after_id:
+                out.append((idx, t[1], t[2], t[3], t[4], t[5], t[6]))
+        return out[:limit]
+
+    async def list_session_files(self, session_id):
+        return [(idx, f[1], f[2], f[3], f[4])
+                for idx, f in enumerate(self.files) if f[0] == session_id]
+
+    async def list_auth_attempts(self, session_id=None, sensor_id=None,
+                                 username=None, accepted=None,
+                                 limit=200, offset=0):
+        rows = [(idx,) + a for idx, a in enumerate(self.attempts)
+                if (not session_id or a[0] == session_id)
+                and (not sensor_id or a[1] == sensor_id)
+                and (not username or a[2] == username)
+                and (accepted is None or a[4] == accepted)]
+        rows.reverse()
+        return rows[offset:offset + limit]
+
+    async def list_squid_hits(self, session_id=None, sensor_id=None,
+                              limit=200, offset=0):
+        rows = [(idx,) + h for idx, h in enumerate(self.squid)
+                if (not session_id or h[0] == session_id)
+                and (not sensor_id or h[1] == sensor_id)]
+        rows.reverse()
+        return rows[offset:offset + limit]
+
+    async def list_snapshots_all(self, sensor_id=None, limit=200):
+        rows = [(s, i, c, img, at)
+                for img, at, s, i, c in self.snapshots
+                if not sensor_id or s == sensor_id]
+        rows.sort(key=lambda r: r[4], reverse=True)
+        return rows[:limit]
+
+    async def count_open_sessions(self):
+        return sum(1 for s in self.sessions.values()
+                   if s["ended_at"] is None)
+
+    async def count_sessions_since(self, at):
+        return sum(1 for s in self.sessions.values()
+                   if s["started_at"] is not None and s["started_at"] >= at)
+
+    async def count_affinities(self):
+        return len(self.affinities)
+
+    async def count_auth_since(self, at):
+        return sum(1 for a in self.attempts if a[6] >= at)
+
+    # -- console users / sessions --------------------------------------
+    async def create_web_user(self, username, pw_hash):
+        if not hasattr(self, "web_users"):
+            self.web_users = {}
+            self._web_seq = 0
+        self._web_seq += 1
+        self.web_users[self._web_seq] = {
+            "id": self._web_seq, "username": username,
+            "pw_hash": pw_hash, "created_at": utcnow(),
+            "disabled": False}
+        return self._web_seq
+
+    async def get_web_user_by_name(self, username):
+        for user in getattr(self, "web_users", {}).values():
+            if user["username"] == username:
+                return dict(user)
+        return None
+
+    async def get_web_user(self, user_id):
+        user = getattr(self, "web_users", {}).get(user_id)
+        return dict(user) if user else None
+
+    async def list_web_users(self):
+        return sorted((dict(u) for u in
+                       getattr(self, "web_users", {}).values()),
+                      key=lambda u: u["username"])
+
+    async def set_web_user_disabled(self, user_id, disabled):
+        if user_id in getattr(self, "web_users", {}):
+            self.web_users[user_id]["disabled"] = disabled
+
+    async def set_web_user_password(self, user_id, pw_hash):
+        if user_id in getattr(self, "web_users", {}):
+            self.web_users[user_id]["pw_hash"] = pw_hash
+
+    async def create_web_session(self, token_sha, user_id, expires_at):
+        if not hasattr(self, "web_sessions"):
+            self.web_sessions = {}
+        self.web_sessions[token_sha] = {"user_id": user_id,
+                                        "expires_at": expires_at}
+
+    async def get_web_session(self, token_sha):
+        sess = getattr(self, "web_sessions", {}).get(token_sha)
+        if not sess:
+            return None
+        user = await self.get_web_user(sess["user_id"])
+        if not user:
+            return None
+        return (token_sha, sess["user_id"], sess["expires_at"],
+                user["username"], user["disabled"])
+
+    async def delete_web_session(self, token_sha):
+        getattr(self, "web_sessions", {}).pop(token_sha, None)
+
+    async def delete_expired_web_sessions(self):
+        now = utcnow()
+        for sha in [s for s, v in
+                    getattr(self, "web_sessions", {}).items()
+                    if v["expires_at"] < now]:
+            del self.web_sessions[sha]
+
+    # -- managed sensors ------------------------------------------------
+    async def upsert_managed_sensor(self, sensor_id, ssh_host, ssh_port=22,
+                                    ssh_user="", remote_dir="",
+                                    listen_addr="0.0.0.0", listen_port=2222,
+                                    server_host="", server_port=8440,
+                                    auth_passwords="[]",
+                                    accept_probability=0.05, notes=""):
+        if not hasattr(self, "managed"):
+            self.managed = {}
+        self.managed[sensor_id] = {
+            "sensor_id": sensor_id, "ssh_host": ssh_host,
+            "ssh_port": ssh_port, "ssh_user": ssh_user,
+            "remote_dir": remote_dir, "listen_addr": listen_addr,
+            "listen_port": listen_port, "server_host": server_host,
+            "server_port": server_port, "auth_passwords": auth_passwords,
+            "accept_probability": accept_probability, "notes": notes,
+            "updated_at": utcnow()}
+
+    async def get_managed_sensor(self, sensor_id):
+        row = getattr(self, "managed", {}).get(sensor_id)
+        return dict(row) if row else None
+
+    async def list_managed_sensors(self):
+        return sorted((dict(r) for r in
+                       getattr(self, "managed", {}).values()),
+                      key=lambda r: r["sensor_id"])
+
+    async def delete_managed_sensor(self, sensor_id):
+        getattr(self, "managed", {}).pop(sensor_id, None)
+
 
 class _FakeContainer:
     def __init__(self, cid, name):
@@ -259,9 +428,13 @@ class FakePodman:
             return "missing"
 
     def inspect(self, cid):
-        info = self.containers[self._resolve(cid)]
-        return {"NetworkSettings": {
-            "Networks": {"carbide": {"IPAddress": info["ip"]}}}}
+        key = self._resolve(cid)
+        info = self.containers[key]
+        return {"Id": key, "Name": info["name"],
+                "State": {"Status": info["status"]},
+                "Config": {"Image": info["image"]},
+                "NetworkSettings": {
+                    "Networks": {"carbide": {"IPAddress": info["ip"]}}}}
 
     def container_ip(self, cid):
         try:
@@ -272,6 +445,25 @@ class FakePodman:
     def list_carbide(self):
         return [_FakeContainer(cid, info["name"])
                 for cid, info in self.containers.items()]
+
+    def list_all_containers(self):
+        return [{"id": cid, "name": info["name"],
+                 "status": info["status"], "image": info["image"],
+                 "created": "", "labels": {"carbide": "affinity"}}
+                for cid, info in self.containers.items()]
+
+    def list_images(self):
+        out = []
+        for idx, ref in enumerate(self.images):
+            repo, _, tag = ref.partition(":")
+            out.append({"id": f"img-{idx + 1}", "tags": [ref],
+                        "repository": repo, "tag": tag or "latest",
+                        "size": 0, "created": ""})
+        return out
+
+    def list_networks(self):
+        return [{"name": name, "driver": "bridge", "subnets": []}
+                for name in sorted(self.networks)]
 
     # -- file helpers for tests ------------------------------------------
     def write_file(self, cid, path, data: bytes):

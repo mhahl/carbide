@@ -94,6 +94,31 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load("/tmp/cfg-bad.toml")
 
+    def test_web_defaults(self):
+        with open("/tmp/cfg-server.toml", "w") as fh:
+            fh.write(SERVER_TOML)
+        cfg = load("/tmp/cfg-server.toml")
+        self.assertTrue(cfg.get("web.enabled"))
+        self.assertEqual(cfg.get("web.bind_addr"), "127.0.0.1")
+        self.assertEqual(cfg.get("web.port"), 8080)
+        self.assertFalse(cfg.get("sensor_mgmt.enabled"))
+        self.assertEqual(cfg.get("sensor_mgmt.user"), "carbide")
+
+    def test_web_bad_values_rejected(self):
+        for section in ("[web]\nport = 0\n",
+                        "[web]\nsession_ttl_hours = 0\n",
+                        "[sensor_mgmt]\nconnect_timeout_s = 0\n"):
+            with open("/tmp/cfg-bad.toml", "w") as fh:
+                fh.write(SERVER_TOML + section)
+            with self.assertRaises(ConfigError):
+                load("/tmp/cfg-bad.toml")
+
+    def test_web_section_rejected_on_sensor(self):
+        with open("/tmp/cfg-bad.toml", "w") as fh:
+            fh.write(SENSOR_TOML + "[web]\nport = 8080\n")
+        with self.assertRaises(ConfigError):
+            load("/tmp/cfg-bad.toml")
+
     def test_empty_sensor_token_rejected(self):
         with open("/tmp/cfg-bad.toml", "w") as fh:
             fh.write('role = "server"\n[server]\nsensor_token = ""\n'

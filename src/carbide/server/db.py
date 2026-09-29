@@ -111,6 +111,35 @@ MIGRATIONS = [
         record_id TEXT PRIMARY KEY,
         applied_at TIMESTAMPTZ DEFAULT now());
     """),
+    (2, """
+    CREATE TABLE IF NOT EXISTS web_users (
+        id BIGSERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        pw_hash TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        disabled BOOLEAN DEFAULT FALSE);
+    CREATE TABLE IF NOT EXISTS web_sessions (
+        token_sha TEXT PRIMARY KEY,
+        user_id BIGINT NOT NULL REFERENCES web_users(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ DEFAULT now(),
+        expires_at TIMESTAMPTZ NOT NULL);
+    CREATE INDEX IF NOT EXISTS web_sessions_user_idx
+        ON web_sessions (user_id);
+    CREATE TABLE IF NOT EXISTS managed_sensors (
+        sensor_id TEXT PRIMARY KEY,
+        ssh_host TEXT NOT NULL,
+        ssh_port INT DEFAULT 22,
+        ssh_user TEXT DEFAULT '',
+        remote_dir TEXT DEFAULT '',
+        listen_addr TEXT DEFAULT '0.0.0.0',
+        listen_port INT DEFAULT 2222,
+        server_host TEXT DEFAULT '',
+        server_port INT DEFAULT 8440,
+        auth_passwords TEXT DEFAULT '[]',
+        accept_probability DOUBLE PRECISION DEFAULT 0.05,
+        notes TEXT DEFAULT '',
+        updated_at TIMESTAMPTZ DEFAULT now());
+    """),
 ]
 
 
@@ -426,3 +455,248 @@ class Database:
             "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (session_id, sensor_id, container_ip, at, method, url,
              status, size, mime))
+
+    # -- console reads -------------------------------------------------
+    async def list_sensors(self):
+        return await self._exec(
+            "SELECT sensor_id, first_seen, last_seen FROM sensors "
+            "ORDER BY last_seen DESC NULLS LAST", fetch="all")
+
+    async def list_sessions(self, sensor_id=None, ip=None, open_only=False,
+                            limit=100, offset=0):
+        conds, params = [], []
+        if sensor_id:
+            conds.append("sensor_id = %s")
+            params.append(sensor_id)
+        if ip:
+            conds.append("attacker_ip = %s")
+            params.append(ip)
+        if open_only:
+            conds.append("ended_at IS NULL")
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.extend([limit, offset])
+        return await self._exec(
+            "SELECT session_id, sensor_id, attacker_ip, username, "
+            "container_id, fresh, over_quota, started_at, ended_at, "
+            f"end_reason FROM sessions {where} "
+            "ORDER BY started_at DESC NULLS LAST, session_id "
+            "LIMIT %s OFFSET %s", tuple(params), fetch="all")
+
+    async def get_transcript(self, session_id: str, after_id: int = 0,
+                             limit: int = 500):
+        return await self._exec(
+            "SELECT id, channel, direction, stream, seq, data, at "
+            "FROM transcripts WHERE session_id = %s AND id > %s "
+            "ORDER BY id LIMIT %s",
+            (session_id, after_id, limit), fetch="all")
+
+    async def list_session_files(self, session_id: str):
+        return await self._exec(
+            "SELECT id, name, blob_sha, size, at FROM session_files "
+            "WHERE session_id = %s ORDER BY id", (session_id,),
+            fetch="all")
+
+    async def list_auth_attempts(self, session_id=None, sensor_id=None,
+                                 username=None, accepted=None,
+                                 limit=200, offset=0):
+        conds, params = [], []
+        if session_id:
+            conds.append("session_id = %s")
+            params.append(session_id)
+        if sensor_id:
+            conds.append("sensor_id = %s")
+            params.append(sensor_id)
+        if username:
+            conds.append("username = %s")
+            params.append(username)
+        if accepted is not None:
+            conds.append("accepted = %s")
+            params.append(accepted)
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.extend([limit, offset])
+        return await self._exec(
+            "SELECT id, session_id, sensor_id, username, password, "
+            "accepted, matched_list, at "
+            f"FROM auth_attempts {where} ORDER BY id DESC "
+            "LIMIT %s OFFSET %s", tuple(params), fetch="all")
+
+    async def list_squid_hits(self, session_id=None, sensor_id=None,
+                              limit=200, offset=0):
+        conds, params = [], []
+        if session_id:
+            conds.append("session_id = %s")
+            params.append(session_id)
+        if sensor_id:
+            conds.append("sensor_id = %s")
+            params.append(sensor_id)
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.extend([limit, offset])
+        return await self._exec(
+            "SELECT id, session_id, sensor_id, container_ip, at, method, "
+            "url, status, bytes, mime "
+            f"FROM squid_hits {where} ORDER BY id DESC LIMIT %s OFFSET %s",
+            tuple(params), fetch="all")
+
+    async def list_snapshots_all(self, sensor_id=None, limit=200):
+        if sensor_id:
+            return await self._exec(
+                "SELECT sensor_id, attacker_ip, container_id, image, "
+                "created_at FROM snapshots WHERE sensor_id = %s "
+                "ORDER BY created_at DESC LIMIT %s",
+                (sensor_id, limit), fetch="all")
+        return await self._exec(
+            "SELECT sensor_id, attacker_ip, container_id, image, "
+            "created_at FROM snapshots ORDER BY created_at DESC LIMIT %s",
+            (limit,), fetch="all")
+
+    async def count_open_sessions(self) -> int:
+        row = await self._exec(
+            "SELECT COUNT(*) FROM sessions WHERE ended_at IS NULL",
+            fetch="one")
+        return row[0] if row else 0
+
+    async def count_sessions_since(self, at) -> int:
+        row = await self._exec(
+            "SELECT COUNT(*) FROM sessions WHERE started_at >= %s",
+            (at,), fetch="one")
+        return row[0] if row else 0
+
+    async def count_affinities(self) -> int:
+        row = await self._exec("SELECT COUNT(*) FROM affinities",
+                               fetch="one")
+        return row[0] if row else 0
+
+    async def count_auth_since(self, at) -> int:
+        row = await self._exec(
+            "SELECT COUNT(*) FROM auth_attempts WHERE at >= %s",
+            (at,), fetch="one")
+        return row[0] if row else 0
+
+    # -- console users / sessions --------------------------------------
+    @staticmethod
+    def _web_user_row(row):
+        keys = ("id", "username", "pw_hash", "created_at", "disabled")
+        return dict(zip(keys, row))
+
+    async def create_web_user(self, username: str, pw_hash: str) -> int:
+        async with self._lock:
+            self._guard()
+            async with self._conn.cursor() as cur:
+                await cur.execute(
+                    "INSERT INTO web_users (username, pw_hash) "
+                    "VALUES (%s, %s) RETURNING id",
+                    (username, pw_hash))
+                row = await cur.fetchone()
+            await self._conn.commit()
+            return row[0]
+
+    async def get_web_user_by_name(self, username: str):
+        row = await self._exec(
+            "SELECT id, username, pw_hash, created_at, disabled "
+            "FROM web_users WHERE username = %s", (username,),
+            fetch="one")
+        return self._web_user_row(row) if row else None
+
+    async def get_web_user(self, user_id: int):
+        row = await self._exec(
+            "SELECT id, username, pw_hash, created_at, disabled "
+            "FROM web_users WHERE id = %s", (user_id,), fetch="one")
+        return self._web_user_row(row) if row else None
+
+    async def list_web_users(self):
+        rows = await self._exec(
+            "SELECT id, username, pw_hash, created_at, disabled "
+            "FROM web_users ORDER BY username", fetch="all")
+        return [self._web_user_row(r) for r in rows]
+
+    async def set_web_user_disabled(self, user_id: int, disabled: bool):
+        await self._exec(
+            "UPDATE web_users SET disabled = %s WHERE id = %s",
+            (disabled, user_id))
+
+    async def set_web_user_password(self, user_id: int, pw_hash: str):
+        await self._exec(
+            "UPDATE web_users SET pw_hash = %s WHERE id = %s",
+            (pw_hash, user_id))
+
+    async def create_web_session(self, token_sha: str, user_id: int,
+                                 expires_at):
+        await self._exec(
+            "INSERT INTO web_sessions (token_sha, user_id, expires_at) "
+            "VALUES (%s, %s, %s)", (token_sha, user_id, expires_at))
+
+    async def get_web_session(self, token_sha: str):
+        return await self._exec(
+            "SELECT s.token_sha, s.user_id, s.expires_at, u.username, "
+            "u.disabled FROM web_sessions s JOIN web_users u "
+            "ON u.id = s.user_id WHERE s.token_sha = %s",
+            (token_sha,), fetch="one")
+
+    async def delete_web_session(self, token_sha: str):
+        await self._exec(
+            "DELETE FROM web_sessions WHERE token_sha = %s", (token_sha,))
+
+    async def delete_expired_web_sessions(self):
+        await self._exec(
+            "DELETE FROM web_sessions WHERE expires_at < now()")
+
+    # -- managed sensors ------------------------------------------------
+    _MANAGED_COLS = ("sensor_id", "ssh_host", "ssh_port", "ssh_user",
+                     "remote_dir", "listen_addr", "listen_port",
+                     "server_host", "server_port", "auth_passwords",
+                     "accept_probability", "notes", "updated_at")
+
+    @classmethod
+    def _managed_row(cls, row):
+        return dict(zip(cls._MANAGED_COLS, row))
+
+    async def upsert_managed_sensor(self, sensor_id: str, ssh_host: str,
+                                    ssh_port: int = 22, ssh_user: str = "",
+                                    remote_dir: str = "",
+                                    listen_addr: str = "0.0.0.0",
+                                    listen_port: int = 2222,
+                                    server_host: str = "",
+                                    server_port: int = 8440,
+                                    auth_passwords: str = "[]",
+                                    accept_probability: float = 0.05,
+                                    notes: str = ""):
+        await self._exec(
+            "INSERT INTO managed_sensors (sensor_id, ssh_host, ssh_port, "
+            "ssh_user, remote_dir, listen_addr, listen_port, server_host, "
+            "server_port, auth_passwords, accept_probability, notes) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (sensor_id) DO UPDATE SET ssh_host = EXCLUDED.ssh_host, "
+            "ssh_port = EXCLUDED.ssh_port, ssh_user = EXCLUDED.ssh_user, "
+            "remote_dir = EXCLUDED.remote_dir, "
+            "listen_addr = EXCLUDED.listen_addr, "
+            "listen_port = EXCLUDED.listen_port, "
+            "server_host = EXCLUDED.server_host, "
+            "server_port = EXCLUDED.server_port, "
+            "auth_passwords = EXCLUDED.auth_passwords, "
+            "accept_probability = EXCLUDED.accept_probability, "
+            "notes = EXCLUDED.notes, updated_at = now()",
+            (sensor_id, ssh_host, ssh_port, ssh_user, remote_dir,
+             listen_addr, listen_port, server_host, server_port,
+             auth_passwords, accept_probability, notes))
+
+    async def get_managed_sensor(self, sensor_id: str):
+        row = await self._exec(
+            "SELECT sensor_id, ssh_host, ssh_port, ssh_user, remote_dir, "
+            "listen_addr, listen_port, server_host, server_port, "
+            "auth_passwords, accept_probability, notes, updated_at "
+            "FROM managed_sensors WHERE sensor_id = %s", (sensor_id,),
+            fetch="one")
+        return self._managed_row(row) if row else None
+
+    async def list_managed_sensors(self):
+        rows = await self._exec(
+            "SELECT sensor_id, ssh_host, ssh_port, ssh_user, remote_dir, "
+            "listen_addr, listen_port, server_host, server_port, "
+            "auth_passwords, accept_probability, notes, updated_at "
+            "FROM managed_sensors ORDER BY sensor_id", fetch="all")
+        return [self._managed_row(r) for r in rows]
+
+    async def delete_managed_sensor(self, sensor_id: str):
+        await self._exec(
+            "DELETE FROM managed_sensors WHERE sensor_id = %s",
+            (sensor_id,))
