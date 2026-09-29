@@ -12,7 +12,7 @@ import logging
 
 from ..common import protocol
 from ..common.protocol import BlobReassembler
-from ..common.util import b64d
+from ..common.util import b64d, bind_failure
 from .podman_wrap import PodmanError
 
 log = logging.getLogger("carbide.server.api")
@@ -94,8 +94,11 @@ class ServerAPI:
                 del self._links[sensor_id]
 
     async def run(self):
-        self._server = await asyncio.start_server(
-            self._handle, self._addr, self._port)
+        try:
+            self._server = await asyncio.start_server(
+                self._handle, self._addr, self._port)
+        except OSError as exc:
+            raise bind_failure("server API", self._addr, self._port, exc)
         log.info("server api on %s:%s", self._addr, self._port)
         async with self._server:
             try:

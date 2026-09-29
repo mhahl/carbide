@@ -7,7 +7,7 @@ import time
 
 import asyncssh
 
-from ..common.util import new_id
+from ..common.util import bind_failure, new_id
 from .auth import AuthPolicy
 from .proxy import bridge_shell_exec
 from .recorder import Recorder
@@ -301,13 +301,16 @@ class SensorApp:
     async def run(self):
         await self.link.start()
         scfg = self.cfg.section("sensor")
-        listener = await asyncssh.create_server(
-            _server_class(self), scfg["listen_addr"],
-            int(scfg["listen_port"]),
-            server_host_keys=[scfg["host_key_path"]],
-            session_factory=self.handle_session,
-            sftp_factory=self.handle_sftp_factory,
-            encoding=None)  # raw bytes end to end
+        addr, port = scfg["listen_addr"], int(scfg["listen_port"])
+        try:
+            listener = await asyncssh.create_server(
+                _server_class(self), addr, port,
+                server_host_keys=[scfg["host_key_path"]],
+                session_factory=self.handle_session,
+                sftp_factory=self.handle_sftp_factory,
+                encoding=None)  # raw bytes end to end
+        except OSError as exc:
+            raise bind_failure("sensor SSH listener", addr, port, exc)
         log.info("sensor %s listening on %s:%s", self.sensor_id,
                  scfg["listen_addr"], scfg["listen_port"])
         try:

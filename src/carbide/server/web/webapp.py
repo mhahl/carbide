@@ -9,6 +9,7 @@ import os
 from aiohttp import web
 from jinja2 import FileSystemLoader, select_autoescape
 
+from ...common.util import bind_failure
 from . import actions, views
 from .sshmgmt import SensorManager
 
@@ -138,7 +139,10 @@ class WebConsole:
         self._runner = web.AppRunner(self._app)
         await self._runner.setup()
         site = web.TCPSite(self._runner, self._addr, self._port)
-        await site.start()
+        try:
+            await site.start()
+        except OSError as exc:
+            raise bind_failure("web console", self._addr, self._port, exc)
         log.info("console on http://%s:%s", self._addr, self._port)
         try:
             await asyncio.Event().wait()

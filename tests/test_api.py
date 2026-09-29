@@ -1,12 +1,13 @@
 import asyncio
 import os
+import socket
 import tempfile
 import unittest
 
 from carbide.common import protocol
 from carbide.common.blobstore import BlobStore
 from carbide.common.config import validate
-from carbide.common.util import b64e, new_id, sha256_hex, utcnow_iso
+from carbide.common.util import BindError, b64e, new_id, sha256_hex, utcnow_iso
 from carbide.sensor.recorder import Recorder
 from carbide.sensor.spool import Spool
 from carbide.server.api import ServerAPI
@@ -73,6 +74,21 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
     async def send_record(self, record):
         return await self.rpc(protocol.new_envelope(
             "record", record_id=record["record_id"], record=record))
+
+    async def test_run_bind_conflict_raises_bind_error(self):
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        sock.listen(1)
+        self.addCleanup(sock.close)
+        port = sock.getsockname()[1]
+        cfg = make_config(server={"api_addr": "127.0.0.1",
+                                  "api_port": port})
+        forensics = Forensics(self.pool, self.pod, self.db, self.blobs,
+                              cfg)
+        api = ServerAPI(self.db, self.pool, forensics, self.blobs, cfg)
+        with self.assertRaises(BindError) as ctx:
+            await api.run()
+        self.assertIn("already in use", str(ctx.exception))
 
     async def test_bad_hello_rejected(self):
         reader, writer = await asyncio.open_connection(

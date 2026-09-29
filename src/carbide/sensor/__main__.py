@@ -9,6 +9,7 @@ import sys
 import asyncssh
 
 from ..common.config import DEFAULT_PATH, ConfigError, load
+from ..common.util import BindError
 from .app import SensorApp
 
 
@@ -60,6 +61,9 @@ def main(argv=None):
         asyncio.run(app.run())
     except KeyboardInterrupt:
         pass
+    except BindError as exc:
+        print(f"carbide-sensor: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
