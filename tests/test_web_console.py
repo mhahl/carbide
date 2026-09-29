@@ -90,6 +90,16 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status, 200)
         self.assertIn("CARBIDE CONSOLE", await resp.text())
 
+    async def test_wireframe_theme_and_active_nav(self):
+        await self.login()
+        body = await (await self.client.get("/")).text()
+        self.assertIn('data-theme="wireframe"', body)
+        self.assertIn("html[data-theme=\"wireframe\"]", body)
+        self.assertIn('href="/" class="active"', body)
+        body = await (await self.client.get("/sessions")).text()
+        self.assertIn('href="/sessions" class="active"', body)
+        self.assertNotIn('href="/" class="active"', body)
+
     async def test_anonymous_redirected(self):
         resp = await self.client.get(
             "/sessions", allow_redirects=False)

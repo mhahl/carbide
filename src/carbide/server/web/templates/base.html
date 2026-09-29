@@ -7,6 +7,11 @@
 <link rel="stylesheet" href="/static/daisyui.css">
 <script src="/static/tailwind.min.js"></script>
 <style>
+/* Wireframe ships a novelty font (Chalkboard/Comic Sans); keep its
+   monochrome palette but use the default sans stack instead. */
+html[data-theme="wireframe"] {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
 .log-line { white-space: pre-wrap; word-break: break-all; }
 pre.evidence { white-space: pre-wrap; word-break: break-all; }
 .t-in { border-left: 3px solid #666; }
@@ -17,7 +22,7 @@ pre.evidence { white-space: pre-wrap; word-break: break-all; }
 <div class="drawer lg:drawer-open">
 <input id="nav-drawer" type="checkbox" class="drawer-toggle">
 <div class="drawer-content flex flex-col min-h-screen">
-<div class="navbar bg-base-200 border-b border-base-300">
+<div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-30">
 <div class="flex-none lg:hidden">
 <label for="nav-drawer" class="btn btn-square btn-ghost" aria-label="menu">
 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
@@ -31,25 +36,28 @@ pre.evidence { white-space: pre-wrap; word-break: break-all; }
 {% endif %}
 </div>
 </div>
-<main class="p-4 max-w-6xl w-full mx-auto">
+<main class="p-4 max-w-6xl w-full mx-auto grow">
 <div id="action-status"></div>
 {% block content %}{% endblock %}
 </main>
+<footer class="footer footer-center p-4 bg-base-200 text-base-content border-t border-base-300">
+<aside><p class="text-xs opacity-60">Carbide operator console — every action is logged.</p></aside>
+</footer>
 </div>
-<div class="drawer-side">
+<div class="drawer-side z-40">
 <label for="nav-drawer" class="drawer-overlay" aria-label="close"></label>
-<ul class="menu p-4 w-64 min-h-full bg-base-200 text-base">
+<ul class="menu p-4 w-64 min-h-full bg-base-200">
 <li class="menu-title">Analyze</li>
-<li><a href="/">Dashboard</a></li>
-<li><a href="/sessions">Sessions</a></li>
-<li><a href="/snapshots">Snapshots</a></li>
-<li><a href="/compare">Compare</a></li>
-<li><a href="/auth">Auth &amp; creds</a></li>
-<li><a href="/podman">Podman</a></li>
+<li><a href="/" class="{% if nav_path|default('') == '/' %}active{% endif %}">Dashboard</a></li>
+<li><a href="/sessions" class="{% if (nav_path|default('')).startswith('/sessions') %}active{% endif %}">Sessions</a></li>
+<li><a href="/snapshots" class="{% if (nav_path|default('')).startswith('/snapshots') %}active{% endif %}">Snapshots</a></li>
+<li><a href="/compare" class="{% if (nav_path|default('')).startswith('/compare') %}active{% endif %}">Compare</a></li>
+<li><a href="/auth" class="{% if (nav_path|default('')).startswith('/auth') %}active{% endif %}">Auth &amp; creds</a></li>
+<li><a href="/podman" class="{% if (nav_path|default('')).startswith('/podman') %}active{% endif %}">Podman</a></li>
 <li class="menu-title">Operate</li>
-<li><a href="/sensors">Sensors</a></li>
-<li><a href="/logs">Logs</a></li>
-<li><a href="/users">Users</a></li>
+<li><a href="/sensors" class="{% if (nav_path|default('')).startswith('/sensors') %}active{% endif %}">Sensors</a></li>
+<li><a href="/logs" class="{% if (nav_path|default('')).startswith('/logs') %}active{% endif %}">Logs</a></li>
+<li><a href="/users" class="{% if (nav_path|default('')).startswith('/users') %}active{% endif %}">Users</a></li>
 </ul>
 </div>
 </div>

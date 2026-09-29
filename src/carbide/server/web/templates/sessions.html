@@ -19,8 +19,8 @@
 <td>{% if s.over_quota %}<span class="badge badge-warning badge-xs">quota</span>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
-<div class="flex gap-2 mt-3">
-{% if page > 1 %}<a class="btn btn-sm" href="/sessions?{{ base_query }}{% if base_query %}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
-{% if has_more %}<a class="btn btn-sm" href="/sessions?{{ base_query }}{% if base_query %}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
+<div class="join mt-3">
+{% if page > 1 %}<a class="join-item btn btn-sm" href="/sessions?{{ base_query }}{% if base_query %}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
+{% if has_more %}<a class="join-item btn btn-sm" href="/sessions?{{ base_query }}{% if base_query %}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
 </div>
 {% endblock %}

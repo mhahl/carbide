@@ -39,6 +39,7 @@ def render(request, name, ctx=None, status=200):
     template = env.get_template(name)
     body = template.render(user=request.get("user"),
                            mgmt=request.app["mgmt"].status(),
+                           nav_path=request.path,
                            **(ctx or {}))
     return web.Response(text=body, content_type="text/html",
                         status=status)

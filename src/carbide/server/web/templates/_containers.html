@@ -10,11 +10,11 @@
 <td><a class="link font-mono" href="/podman/containers/{{ c.id }}">{{ c.id|short }}</a></td>
 <td class="font-mono text-xs">{{ c.image }}</td>
 <td>{% if c.status == "running" %}<span class="badge badge-success badge-xs">running</span>{% else %}<span class="badge badge-ghost badge-xs">{{ c.status }}</span>{% endif %}</td>
-<td class="whitespace-nowrap">
-<button class="btn btn-xs" hx-post="/actions/containers/{{ c.id }}/start" hx-target="#action-status" hx-swap="innerHTML">start</button>
-<button class="btn btn-xs" hx-post="/actions/containers/{{ c.id }}/stop" hx-target="#action-status" hx-swap="innerHTML">stop</button>
-<button class="btn btn-xs" hx-post="/actions/containers/{{ c.id }}/restart" hx-target="#action-status" hx-swap="innerHTML">restart</button>
-</td></tr>
+<td class="whitespace-nowrap"><div class="join">
+<button class="join-item btn btn-xs" hx-post="/actions/containers/{{ c.id }}/start" hx-target="#action-status" hx-swap="innerHTML">start</button>
+<button class="join-item btn btn-xs" hx-post="/actions/containers/{{ c.id }}/stop" hx-target="#action-status" hx-swap="innerHTML">stop</button>
+<button class="join-item btn btn-xs" hx-post="/actions/containers/{{ c.id }}/restart" hx-target="#action-status" hx-swap="innerHTML">restart</button>
+</div></td></tr>
 {% endfor %}
 </tbody></table></div>
 <h2 class="font-bold mb-2">Images ({{ images|length }})</h2>

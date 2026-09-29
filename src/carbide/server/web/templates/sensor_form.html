@@ -1,9 +1,17 @@
 {% extends "base.html" %}
 {% block title %}{% if is_new %}Register sensor{% else %}{{ m.sensor_id }}{% endif %} — Carbide{% endblock %}
 {% block content %}
+<div class="breadcrumbs text-sm mb-2">
+<ul>
+<li><a href="/sensors">Sensors</a></li>
+<li>{% if is_new %}Register{% else %}<span class="font-mono">{{ m.sensor_id }}</span>{% endif %}</li>
+</ul>
+</div>
 <h1 class="text-xl font-bold mb-3">{% if is_new %}Register sensor{% else %}Sensor <span class="font-mono">{{ m.sensor_id }}</span>{% endif %}</h1>
 {% if error %}<div class="alert alert-error mb-3"><span>{{ error }}</span></div>{% endif %}
-<form method="post" action="/sensors/save" class="grid md:grid-cols-2 gap-3 max-w-3xl">
+<div class="card card-bordered bg-base-100 max-w-3xl">
+<div class="card-body">
+<form method="post" action="/sensors/save" class="grid md:grid-cols-2 gap-3">
 <label class="form-control"><span class="label-text">Sensor ID</span>
 <input type="text" name="sensor_id" value="{{ m.sensor_id }}" class="input input-bordered input-sm" {% if not is_new %}readonly{% endif %} required></label>
 <label class="form-control"><span class="label-text">SSH host</span>
@@ -30,4 +38,6 @@
 <textarea name="passwords" rows="5" class="textarea textarea-bordered font-mono">{{ passwords|default("") }}</textarea></label>
 <div class="md:col-span-2"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
 </form>
+</div>
+</div>
 {% endblock %}

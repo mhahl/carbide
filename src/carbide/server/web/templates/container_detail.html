@@ -1,6 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Container {{ cid|short }} — Carbide{% endblock %}
 {% block content %}
+<div class="breadcrumbs text-sm mb-2">
+<ul>
+<li><a href="/podman">Podman</a></li>
+<li><span class="font-mono">{{ cid|short }}</span></li>
+</ul>
+</div>
 <h1 class="text-xl font-bold font-mono mb-1">{{ cid }}</h1>
 <p class="mb-3">{% if status == "running" %}<span class="badge badge-success">running</span>{% else %}<span class="badge badge-ghost">{{ status }}</span>{% endif %}
 {% if ip %}<span class="font-mono text-sm ml-2">{{ ip }}</span>{% endif %}</p>
@@ -8,9 +14,11 @@
 <p class="text-sm mb-3">Affinity: {{ aff.sensor_id }} / <span class="font-mono">{{ aff.attacker_ip }}</span> (port {{ aff.ssh_port }})</p>
 {% endif %}
 <div class="flex flex-wrap gap-2 mb-4">
-<button class="btn btn-sm" hx-post="/actions/containers/{{ cid }}/start" hx-target="#action-status" hx-swap="innerHTML">Start</button>
-<button class="btn btn-sm" hx-post="/actions/containers/{{ cid }}/stop" hx-target="#action-status" hx-swap="innerHTML">Stop</button>
-<button class="btn btn-sm" hx-post="/actions/containers/{{ cid }}/restart" hx-target="#action-status" hx-swap="innerHTML">Restart</button>
+<div class="join">
+<button class="join-item btn btn-sm" hx-post="/actions/containers/{{ cid }}/start" hx-target="#action-status" hx-swap="innerHTML">Start</button>
+<button class="join-item btn btn-sm" hx-post="/actions/containers/{{ cid }}/stop" hx-target="#action-status" hx-swap="innerHTML">Stop</button>
+<button class="join-item btn btn-sm" hx-post="/actions/containers/{{ cid }}/restart" hx-target="#action-status" hx-swap="innerHTML">Restart</button>
+</div>
 <a class="btn btn-sm" href="/podman/containers/{{ cid }}/diff">Live diff</a>
 {% if aff %}
 <button class="btn btn-sm" hx-post="/actions/snapshots" hx-vals='{"container_id": "{{ cid }}", "sensor_id": "{{ aff.sensor_id }}", "ip": "{{ aff.attacker_ip }}"}' hx-target="#action-status" hx-swap="innerHTML">Snapshot now</button>
@@ -18,5 +26,5 @@
 {% endif %}
 </div>
 <h2 class="font-bold mb-2">Inspect</h2>
-<pre class="evidence text-xs bg-base-200 p-3 overflow-x-auto">{{ pretty }}</pre>
+<div class="mockup-code text-xs"><pre class="evidence px-4">{{ pretty }}</pre></div>
 {% endblock %}

@@ -9,14 +9,14 @@
 </form>
 {% if rows is not none %}
 <div class="grid md:grid-cols-2 gap-2 mb-3 text-sm">
-<div><span class="text-gray-500">A</span> <a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:12] }}</a> {{ a.sensor_id }} {{ a.attacker_ip }}</div>
-<div><span class="text-gray-500">B</span> <a class="link font-mono" href="/sessions/{{ b.session_id }}">{{ b.session_id[:12] }}</a> {{ b.sensor_id }} {{ b.attacker_ip }}</div>
+<div><span class="opacity-60">A</span> <a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:12] }}</a> {{ a.sensor_id }} {{ a.attacker_ip }}</div>
+<div><span class="opacity-60">B</span> <a class="link font-mono" href="/sessions/{{ b.session_id }}">{{ b.session_id[:12] }}</a> {{ b.sensor_id }} {{ b.attacker_ip }}</div>
 </div>
 <div class="overflow-x-auto"><table class="table table-xs table-zebra">
 <thead><tr><th>Path</th><th>A</th><th>B</th></tr></thead>
 <tbody>
 {% for r in rows %}
-<tr class="{% if r.a != r.b %}bg-warning/20{% endif %}"><td class="font-mono">{{ r.path }}</td>
+<tr class="{% if r.a != r.b %}bg-base-300{% endif %}"><td class="font-mono">{{ r.path }}</td>
 <td>{% if r.a %}<span class="badge badge-xs">{{ r.a }}</span>{% else %}—{% endif %}</td>
 <td>{% if r.b %}<span class="badge badge-xs">{{ r.b }}</span>{% else %}—{% endif %}</td></tr>
 {% endfor %}

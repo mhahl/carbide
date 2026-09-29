@@ -2,8 +2,9 @@
 {% block title %}{{ m.sensor_id }} — Carbide{% endblock %}
 {% block content %}
 {{ super() }}
-<div class="mt-6 max-w-3xl">
-<h2 class="font-bold mb-2">Remote actions
+<div class="card card-bordered bg-base-100 max-w-3xl mt-6">
+<div class="card-body">
+<h2 class="card-title">Remote actions
 {% if live %}<span class="badge badge-success badge-sm ml-1">linked</span>{% else %}<span class="badge badge-ghost badge-sm ml-1">link down</span>{% endif %}
 {% if not mgmt.enabled %}<span class="badge badge-warning badge-sm ml-1">SSH mgmt not configured</span>{% endif %}
 </h2>
@@ -16,5 +17,6 @@
 </div>
 <div id="provision-box"></div>
 <p class="text-sm mt-2"><a class="link" href="/sessions?sensor={{ m.sensor_id }}">Sessions for this sensor</a></p>
+</div>
 </div>
 {% endblock %}

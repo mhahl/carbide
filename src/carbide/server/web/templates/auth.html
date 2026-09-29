@@ -21,9 +21,9 @@
 <td><a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:8] }}</a></td></tr>
 {% endfor %}
 </tbody></table></div>
-<div class="flex gap-2 mt-3 mb-6">
-{% if page > 1 %}<a class="btn btn-sm" href="/auth?{{ base_query }}{% if base_query %}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
-{% if has_more %}<a class="btn btn-sm" href="/auth?{{ base_query }}{% if base_query %}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
+<div class="join mt-3 mb-6">
+{% if page > 1 %}<a class="join-item btn btn-sm" href="/auth?{{ base_query }}{% if base_query %}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
+{% if has_more %}<a class="join-item btn btn-sm" href="/auth?{{ base_query }}{% if base_query %}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
 </div>
 <h1 class="text-xl font-bold mb-3">Container credentials</h1>
 <div class="overflow-x-auto"><table class="table table-sm table-zebra">

@@ -1,8 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Live diff {{ cid|short }} — Carbide{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-1">Live diff: <span class="font-mono">{{ cid|short }}</span></h1>
-<p class="mb-3"><a class="link" href="/podman/containers/{{ cid }}">← container</a></p>
+<div class="breadcrumbs text-sm mb-2">
+<ul>
+<li><a href="/podman">Podman</a></li>
+<li><a class="font-mono" href="/podman/containers/{{ cid }}">{{ cid|short }}</a></li>
+<li>Diff</li>
+</ul>
+</div>
+<h1 class="text-xl font-bold mb-3">Live diff: <span class="font-mono">{{ cid|short }}</span></h1>
 {% if warnings %}
 <div class="alert alert-warning mb-3"><span>{{ warnings|join("; ") }}</span></div>
 {% endif %}

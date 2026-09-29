@@ -6,5 +6,5 @@
 {% else %}
 <div class="alert alert-error mb-2"><span>Provision {{ job.sensor_id }} failed</span></div>
 {% endif %}
-{% if job.output %}<pre class="evidence text-xs bg-base-200 p-3 overflow-x-auto max-h-96">{{ job.output }}</pre>{% endif %}
+{% if job.output %}<div class="mockup-code text-xs max-h-96 overflow-y-auto"><pre class="evidence px-4">{{ job.output }}</pre></div>{% endif %}
 </div>

@@ -1,28 +1,35 @@
 {% extends "base.html" %}
 {% block title %}Session {{ s.session_id[:12] }} — Carbide{% endblock %}
 {% block content %}
+<div class="breadcrumbs text-sm mb-2">
+<ul>
+<li><a href="/sessions">Sessions</a></li>
+<li><span class="font-mono">{{ s.session_id[:12] }}</span></li>
+</ul>
+</div>
 <div class="flex flex-wrap items-center gap-2 mb-3">
 <h1 class="text-xl font-bold font-mono">{{ s.session_id }}</h1>
 {% if s.ended_at %}<span class="badge badge-ghost">ended</span>{% else %}<span class="badge badge-success">open</span>{% endif %}
 {% if s.over_quota %}<span class="badge badge-warning">over quota</span>{% endif %}
 </div>
 <div class="grid md:grid-cols-4 gap-2 mb-4 text-sm">
-<div><span class="text-gray-500">Sensor</span><br>{{ s.sensor_id }}</div>
-<div><span class="text-gray-500">Attacker</span><br><span class="font-mono">{{ s.attacker_ip }}</span></div>
-<div><span class="text-gray-500">User</span><br><span class="font-mono">{{ s.username or "—" }}</span></div>
-<div><span class="text-gray-500">Container</span><br>{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</div>
-<div><span class="text-gray-500">Started</span><br>{{ s.started_at|ts }}</div>
-<div><span class="text-gray-500">Ended</span><br>{{ s.ended_at|ts }}</div>
-<div class="md:col-span-2"><span class="text-gray-500">Reason</span><br>{{ s.end_reason or "—" }}</div>
+<div><span class="opacity-60">Sensor</span><br>{{ s.sensor_id }}</div>
+<div><span class="opacity-60">Attacker</span><br><span class="font-mono">{{ s.attacker_ip }}</span></div>
+<div><span class="opacity-60">User</span><br><span class="font-mono">{{ s.username or "—" }}</span></div>
+<div><span class="opacity-60">Container</span><br>{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</div>
+<div><span class="opacity-60">Started</span><br>{{ s.started_at|ts }}</div>
+<div><span class="opacity-60">Ended</span><br>{{ s.ended_at|ts }}</div>
+<div class="md:col-span-2"><span class="opacity-60">Reason</span><br>{{ s.end_reason or "—" }}</div>
 </div>
 {% if not s.ended_at %}
 <div class="mb-4">
 <button class="btn btn-sm btn-error" hx-post="/actions/sessions/{{ s.session_id }}/kill" hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Terminate this live attacker session?">Kill session</button>
 </div>
 {% endif %}
+<div class="divider"></div>
 
 <h2 class="font-bold mt-4 mb-2">Forensic report</h2>
-{% if report %}<pre class="evidence text-xs bg-base-200 p-3 overflow-x-auto">{{ report }}</pre>{% else %}<p class="text-sm">No report yet.</p>{% endif %}
+{% if report %}<div class="mockup-code text-xs"><pre class="evidence px-4">{{ report }}</pre></div>{% else %}<p class="text-sm opacity-60">No report yet.</p>{% endif %}
 
 <h2 class="font-bold mt-4 mb-2">Container diff ({{ diffs|length }})</h2>
 <div class="overflow-x-auto"><table class="table table-xs table-zebra">
@@ -54,11 +61,13 @@
 </tbody></table></div>
 
 <h2 class="font-bold mt-4 mb-2">Transcript</h2>
-<div id="transcript" class="bg-base-200 p-2 font-mono text-xs max-h-96 overflow-y-auto"
+<div class="mockup-code text-xs max-h-96 overflow-y-auto">
+<div id="transcript" class="px-4 py-2"
 {% if not s.ended_at %}hx-get="/sessions/{{ s.session_id }}/transcript?after=0" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
 {% for c in transcript %}
 <div class="t-{{ 'in' if c.direction == 'in' else 'out' }} pl-2 mb-1"><span class="opacity-60">[{{ c.channel }} {{ c.direction }}]</span> {{ c.text }}</div>
 {% endfor %}
+</div>
 </div>
 
 <h2 class="font-bold mt-4 mb-2">Squid hits ({{ hits|length }})</h2>
