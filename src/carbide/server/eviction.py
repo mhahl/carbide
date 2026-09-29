@@ -66,6 +66,13 @@ class EvictionJob:
                 evicted += 1
         log.info("eviction pass: %d scanned, %d evicted", scanned, evicted)
 
+    async def evict_now(self, sensor_id: str, ip: str, reason: str):
+        """Console entrypoint: archive + remove one affinity on demand."""
+        aff = await self._db.get_affinity(sensor_id, ip)
+        if aff is None:
+            raise KeyError(f"no affinity for {sensor_id}/{ip}")
+        await self._evict(aff, reason)
+
     async def _evict(self, aff, reason):
         sensor_id, ip = aff["sensor_id"], aff["attacker_ip"]
         log.info("evicting %s/%s: %s", sensor_id, ip, reason)

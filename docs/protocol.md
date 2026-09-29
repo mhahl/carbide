@@ -41,6 +41,16 @@ Blob chunks reassemble server-side and verify the sha256 before storing;
 a mismatch refuses that chunk. Records may arrive out of order or twice:
 sessions auto-create on first sight, and `applied_records` dedupes.
 
-The server never initiates messages; all sensor→server traffic above is
-spooled to disk on the sensor before sending, forwarded in order, and removed
-only after the server's ack.
+All sensor→server traffic above is spooled to disk on the sensor
+before sending, forwarded in order, and removed only after the server's
+ack.
+
+## Server→sensor notifies
+
+Server → `{"id","type":"notify","name",...}` on an already-linked
+connection. Notifies are fire-and-forget (no reply); the sensor drops
+unknown names. They drive console actions:
+
+- `kill_session {"session_id"}` — the sensor ends that live attacker
+  session (`session_end` with reason `killed by operator`) and closes
+  the SSH connection. Unknown or already-closed sessions are ignored.

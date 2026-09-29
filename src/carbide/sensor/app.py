@@ -76,7 +76,8 @@ class SensorApp:
         self.link = ServerLink(
             scfg["server_host"], scfg["server_port"],
             self.sensor_id, scfg["token"], self.spool,
-            request_timeout=scfg["request_timeout_s"])
+            request_timeout=scfg["request_timeout_s"],
+            on_notify=self._handle_notify)
         acfg = cfg.section("auth")
         self.policy = AuthPolicy(acfg["passwords"],
                                  acfg["accept_probability"])
@@ -87,6 +88,7 @@ class SensorApp:
                                100 * 1024 * 1024)
         self._ctx_by_server: dict = {}
         self._ctx_by_conn: dict = {}
+        self._ctx_by_session: dict = {}
 
     # -- SSHServer hooks -------------------------------------------------
     def conn_made(self, server, conn):
@@ -100,6 +102,7 @@ class SensorApp:
         ctx.attacker_ip = ip
         self._ctx_by_server[server] = ctx
         self._ctx_by_conn[conn] = ctx
+        self._ctx_by_session[session_id] = ctx
         ctx.watch_task = asyncio.create_task(self._watch(ctx))
         log.info("connection from %s session=%s", ip, session_id)
 
@@ -108,6 +111,7 @@ class SensorApp:
         if ctx is None:
             return
         self._ctx_by_conn.pop(ctx.conn, None)
+        self._ctx_by_session.pop(ctx.session_id, None)
         if ctx.watch_task is not None:
             ctx.watch_task.cancel()
         ctx.recorder.session_end("disconnect" if exc is None else
@@ -119,6 +123,24 @@ class SensorApp:
                 pass
         log.info("closed session=%s (%s)", ctx.session_id,
                  "disconnect" if exc is None else exc)
+
+    async def _handle_notify(self, msg: dict):
+        """Server-pushed notifies (console actions)."""
+        name = msg.get("name")
+        if name != "kill_session":
+            log.debug("ignoring unknown notify %s", name)
+            return
+        session_id = msg.get("session_id", "")
+        ctx = self._ctx_by_session.get(session_id)
+        if ctx is None:
+            log.debug("kill_session %s: no such live session", session_id)
+            return
+        log.info("session=%s killed by operator", session_id)
+        ctx.recorder.session_end("killed by operator")
+        try:
+            ctx.conn.close()
+        except Exception:
+            pass
 
     def auth_allowed(self, server) -> bool:
         ctx = self._ctx_by_server.get(server)

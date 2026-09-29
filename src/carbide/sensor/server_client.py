@@ -20,13 +20,14 @@ class ServerAuthError(ServerError):
 
 class ServerLink:
     def __init__(self, host, port, sensor_id, token, spool,
-                 request_timeout=10.0):
+                 request_timeout=10.0, on_notify=None):
         self._host = host
         self._port = port
         self._sensor_id = sensor_id
         self._token = token
         self._spool = spool
         self._timeout = request_timeout
+        self._notify_handler = on_notify
         self._reader = None
         self._writer = None
         self._write_lock = asyncio.Lock()
@@ -190,11 +191,23 @@ class ServerLink:
             except protocol.ProtocolError as exc:
                 log.warning("bad frame from server: %s", exc)
                 continue
+            if msg.get("type") == "notify":
+                await self._on_notify(msg)
+                continue
             reply_to = msg.get("in_reply_to")
             if reply_to and reply_to in self._pending:
                 fut = self._pending.pop(reply_to)
                 if not fut.done():
                     fut.set_result(msg)
+
+    async def _on_notify(self, msg: dict):
+        if self._notify_handler is None:
+            log.debug("dropping notify %s (no handler)", msg.get("name"))
+            return
+        try:
+            await self._notify_handler(msg)
+        except Exception as exc:
+            log.warning("notify %s failed: %s", msg.get("name"), exc)
 
     async def _forward_loop(self):
         while self._running:

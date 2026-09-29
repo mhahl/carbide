@@ -8,7 +8,7 @@ import logging
 import re
 
 from ..common.blobstore import QuotaExceeded
-from .podman_wrap import IsDirError
+from .podman_wrap import IsDirError, PodmanError
 
 log = logging.getLogger("carbide.server.forensics")
 
@@ -268,6 +268,17 @@ class Forensics:
                                    json.dumps(payload), at)
         return {"session_id": session_id, "changes": 0, "warnings": warnings}
 
+    async def snapshot_now(self, sensor_id: str, ip: str,
+                           container_id: str) -> str:
+        """Console entrypoint: commit one snapshot on demand; returns tag."""
+        at = datetime.datetime.now(datetime.timezone.utc)
+        warnings: list = []
+        tag = await self._snapshot(sensor_id, ip, container_id,
+                                   warnings, at)
+        if tag is None:
+            raise PodmanError(warnings[0] if warnings else "snapshot failed")
+        return tag
+
     async def _snapshot(self, sensor_id, ip, container_id, warnings, at):
         tag = (f"carbide-snap-{_safe_tag(sensor_id)}-{_safe_tag(ip)}-"
                f"{at.strftime('%Y%m%d-%H%M%S-%f')}")
@@ -276,7 +287,7 @@ class Forensics:
         except Exception as exc:
             log.warning("snapshot %s failed: %s", tag, exc)
             warnings.append(f"snapshot failed: {exc}")
-            return
+            return None
         log.info("snapshot %s created", tag)
         await self._db.add_snapshot(sensor_id, ip, container_id, tag)
         snaps = await self._db.list_snapshots(sensor_id, ip)
@@ -286,3 +297,4 @@ class Forensics:
             await self._db.delete_snapshot(oldest)
             log.debug("pruned snapshot %s (retention %d)",
                       oldest, self._retention)
+        return tag

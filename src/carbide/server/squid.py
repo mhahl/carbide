@@ -45,12 +45,18 @@ def parse_line(line: str):
 class SquidTailer:
     """Follows the log like tail -F (survives rotation) and records hits."""
 
-    def __init__(self, db, log_path: str, poll_s: float = 1.0):
+    def __init__(self, db, log_path: str, poll_s: float = 1.0,
+                 bus=None):
         self._db = db
         self._path = log_path
         self._poll = poll_s
         self._running = False
         self._missing_warned = False
+        self._bus = bus
+
+    def _emit(self, event: str, **data):
+        if self._bus is not None:
+            self._bus.publish(event, data)
 
     async def run_forever(self):
         self._running = True
@@ -138,3 +144,6 @@ class SquidTailer:
             session_id, sensor_id, hit["client_ip"], hit["at"],
             hit["method"], hit["url"], hit["status"], hit["bytes"],
             hit["mime"])
+        self._emit("squid.hit", session_id=session_id,
+                   sensor_id=sensor_id, method=hit["method"],
+                   url=hit["url"], status=hit["status"])

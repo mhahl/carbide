@@ -37,7 +37,7 @@ def _need_str(record: dict, key: str, limit: int = 4096) -> str:
 
 
 class ServerAPI:
-    def __init__(self, db, pool, forensics, blobstore, cfg):
+    def __init__(self, db, pool, forensics, blobstore, cfg, bus=None):
         scfg = cfg.section("server")
         self._addr = scfg["api_addr"]
         self._port = scfg["api_port"]
@@ -46,11 +46,52 @@ class ServerAPI:
         self._pool = pool
         self._forensics = forensics
         self._blobs = blobstore
+        self._bus = bus
         self._session_max = cfg.get("quotas.session_max_bytes",
                                     100 * 1024 * 1024)
         self._asm = BlobReassembler()
         self._server = None
         self._handlers = set()
+        self._links: dict = {}  # sensor_id -> set of writers
+
+    def _emit(self, event: str, **data):
+        if self._bus is not None:
+            self._bus.publish(event, data)
+
+    def live_sensors(self) -> dict:
+        """sensor_id -> number of open links (console sensor state)."""
+        return {sid: len(writers) for sid, writers in self._links.items()
+                if writers}
+
+    async def notify_sensor(self, sensor_id: str, name: str,
+                            **fields) -> bool:
+        """Push a server->sensor notify; True if any link took it."""
+        writers = set(self._links.get(sensor_id, set()))
+        if not writers:
+            return False
+        msg = protocol.new_envelope("notify", name=name, **fields)
+        frame = protocol.encode(msg)
+        delivered = False
+        for writer in writers:
+            try:
+                writer.write(frame)
+                await writer.drain()
+                delivered = True
+            except Exception:
+                self._link_drop(sensor_id, writer)
+        log.debug("notify %s -> %s: %s", sensor_id, name,
+                  "delivered" if delivered else "all links dead")
+        return delivered
+
+    def _link_add(self, sensor_id: str, writer):
+        self._links.setdefault(sensor_id, set()).add(writer)
+
+    def _link_drop(self, sensor_id: str, writer):
+        writers = self._links.get(sensor_id)
+        if writers is not None:
+            writers.discard(writer)
+            if not writers:
+                del self._links[sensor_id]
 
     async def run(self):
         self._server = await asyncio.start_server(
@@ -97,6 +138,7 @@ class ServerAPI:
                 try:
                     if mtype == "hello":
                         sensor_id = await self._hello(msg)
+                        self._link_add(sensor_id, writer)
                         reply = protocol.new_reply(req_id, ok=True)
                     elif sensor_id is None:
                         reply = protocol.new_reply(
@@ -140,6 +182,8 @@ class ServerAPI:
         except (ConnectionResetError, BrokenPipeError):
             pass
         finally:
+            if sensor_id is not None:
+                self._link_drop(sensor_id, writer)
             try:
                 writer.close()
             except Exception:
@@ -210,6 +254,9 @@ class ServerAPI:
         await self._pool.session_started(sensor_id, ip)
         log.info("session %s started: sensor=%s ip=%s user=%s",
                  session_id, sensor_id, ip, username or "-")
+        self._emit("session.started", session_id=session_id,
+                   sensor_id=sensor_id, attacker_ip=ip,
+                   username=username)
 
     async def _r_session_container(self, sensor_id, session_id, record):
         cid = _need_str(record, "container_id", 128)
@@ -232,6 +279,9 @@ class ServerAPI:
             await self._pool.session_ended(sensor_id, ip)
         log.info("session %s ended: sensor=%s ip=%s reason=%s",
                  session_id, sensor_id, ip or "-", reason or "-")
+        self._emit("session.ended", session_id=session_id,
+                   sensor_id=sensor_id, attacker_ip=ip or "",
+                   reason=reason or "")
         if container_id:
             asyncio.create_task(self._collect(
                 sensor_id, ip, session_id, container_id, reason))
@@ -246,6 +296,9 @@ class ServerAPI:
                 container_id=container_id, reason=reason or "session end")
             log.info("forensics for %s: %d changes, %d warnings",
                      session_id, summary["changes"], len(summary["warnings"]))
+            self._emit("forensics.ready", session_id=session_id,
+                       changes=summary["changes"],
+                       warnings=len(summary["warnings"]))
         except Exception as exc:
             log.warning("forensics for %s failed: %s", session_id, exc)
 
@@ -266,6 +319,9 @@ class ServerAPI:
                   session_id, username or "-",
                   bool(record.get("accepted")),
                   bool(record.get("matched_list")))
+        self._emit("auth.attempt", session_id=session_id,
+                   sensor_id=sensor_id, username=username,
+                   accepted=bool(record.get("accepted")))
 
     async def _over_quota(self, session_id, extra: int) -> bool:
         try:
@@ -295,6 +351,9 @@ class ServerAPI:
         await self._db.add_transcript(
             session_id, record["channel"], record["direction"],
             record["stream"], seq, data, parse_at(record.get("at")))
+        self._emit("transcript.chunk", session_id=session_id,
+                   channel=record["channel"],
+                   direction=record["direction"], bytes=len(data))
 
     async def _r_blob_meta(self, sensor_id, session_id, record):
         _need_str(record, "blob_sha", 64)
@@ -344,3 +403,5 @@ class ServerAPI:
                                         ref.size, at)
         log.info("stored file %s (%d bytes) for session %s",
                  name, ref.size, session_id)
+        self._emit("file.stored", session_id=session_id, name=name,
+                   size=ref.size, sha256=ref.sha256)

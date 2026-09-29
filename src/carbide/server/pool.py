@@ -19,7 +19,8 @@ def new_password() -> str:
 
 
 class Pool:
-    def __init__(self, podman, db, cfg):
+    def __init__(self, podman, db, cfg, bus=None):
+        self._bus = bus
         self._pod = podman
         self._db = db
         pcfg = cfg.section("podman")
@@ -47,6 +48,10 @@ class Pool:
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: fn(*args, **kwargs))
+
+    def _emit(self, event: str, **data):
+        if self._bus is not None:
+            self._bus.publish(event, data)
 
     # -- startup ---------------------------------------------------------
     async def start(self):
@@ -172,6 +177,10 @@ class Pool:
                     log.info("reusing container %s for %s/%s (port %d)",
                              aff["container_id"][:12], sensor_id, ip,
                              aff["ssh_port"])
+                    self._emit("container.assigned",
+                               sensor_id=sensor_id, attacker_ip=ip,
+                               container_id=aff["container_id"],
+                               port=aff["ssh_port"], fresh=False)
                     return self._endpoint(aff, fresh=False)
                 log.warning("affinity %s/%s lost container %s; reassigning",
                             sensor_id, ip, aff["container_id"][:12])
@@ -201,6 +210,9 @@ class Pool:
                 raise
             log.info("assigned fresh container %s to %s/%s (port %d)",
                      cid[:12], sensor_id, ip, fresh["port"])
+            self._emit("container.assigned", sensor_id=sensor_id,
+                       attacker_ip=ip, container_id=cid,
+                       port=fresh["port"], fresh=True)
             asyncio.create_task(self._refill())
             return {
                 "container_id": cid,
@@ -226,6 +238,7 @@ class Pool:
         if status != "running":
             log.info("starting container %s (was %s)", cid[:12], status)
             await self.run_sync(self._pod.start, cid)
+            self._emit("container.started", container_id=cid)
         else:
             log.debug("container %s already running", cid[:12])
 
@@ -300,6 +313,9 @@ class Pool:
             log.info("keep-warm expired for %s/%s; stopping %s",
                      sensor_id, ip, aff["container_id"][:12])
             await self.run_sync(self._pod.stop, aff["container_id"])
+            self._emit("container.stopped",
+                       container_id=aff["container_id"],
+                       sensor_id=sensor_id, attacker_ip=ip)
         except asyncio.CancelledError:
             pass
         except Exception as exc:
@@ -323,3 +339,5 @@ class Pool:
         self._refcounts.pop((sensor_id, ip), None)
         log.info("removed affinity %s/%s (container %s, port %d)",
                  sensor_id, ip, aff["container_id"][:12], aff["ssh_port"])
+        self._emit("container.removed", sensor_id=sensor_id,
+                   attacker_ip=ip, container_id=aff["container_id"])
