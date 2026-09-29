@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Carbide operator console">
+<meta name="theme-color" content="#ffffff">
 <title>{% block title %}Carbide{% endblock %}</title>
 <link rel="stylesheet" href="/static/daisyui.css">
 <script src="/static/tailwind.min.js"></script>
@@ -16,18 +18,31 @@ html[data-theme="wireframe"] {
 pre.evidence { white-space: pre-wrap; word-break: break-all; }
 .t-in { border-left: 3px solid #666; }
 .t-out { border-left: 3px solid #bbb; }
+::selection { background: #222; color: #fff; }
+:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.link { text-underline-offset: 3px; }
+.tabular { font-variant-numeric: tabular-nums; }
+/* htmx adds .htmx-request to the element driving a request: dim action
+   buttons while their POST is in flight (polling regions are not .btn). */
+.btn.htmx-request { opacity: .55; pointer-events: none; }
+.mockup-code::-webkit-scrollbar { width: 10px; height: 10px; }
+.mockup-code::-webkit-scrollbar-thumb { background: #555; border-radius: 5px; }
+.mockup-code::-webkit-scrollbar-track { background: transparent; }
 </style>
 </head>
 <body {% if user %}hx-ext="sse" sse-connect="/events/stream"{% endif %}>
+<a href="#main" class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-base-100 focus:px-3 focus:py-2">Skip to content</a>
 <div class="drawer lg:drawer-open">
 <input id="nav-drawer" type="checkbox" class="drawer-toggle">
 <div class="drawer-content flex flex-col min-h-screen">
 <div class="navbar bg-base-200 border-b border-base-300 sticky top-0 z-30">
+{% if user %}
 <div class="flex-none lg:hidden">
 <label for="nav-drawer" class="btn btn-square btn-ghost" aria-label="menu">
-<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
 </label>
 </div>
+{% endif %}
 <div class="flex-1 px-2 font-mono font-bold">CARBIDE CONSOLE</div>
 <div class="flex-none flex items-center gap-2">
 {% if user %}
@@ -36,30 +51,32 @@ pre.evidence { white-space: pre-wrap; word-break: break-all; }
 {% endif %}
 </div>
 </div>
-<main class="p-4 max-w-6xl w-full mx-auto grow">
-<div id="action-status"></div>
+<main id="main" class="p-4 max-w-6xl w-full mx-auto grow">
+<div id="action-status" aria-live="polite"></div>
 {% block content %}{% endblock %}
 </main>
 <footer class="footer footer-center p-4 bg-base-200 text-base-content border-t border-base-300">
 <aside><p class="text-xs opacity-60">Carbide operator console — every action is logged.</p></aside>
 </footer>
 </div>
+{% if user %}
 <div class="drawer-side z-40">
 <label for="nav-drawer" class="drawer-overlay" aria-label="close"></label>
 <ul class="menu p-4 w-64 min-h-full bg-base-200">
 <li class="menu-title">Analyze</li>
-<li><a href="/" class="{% if nav_path|default('') == '/' %}active{% endif %}">Dashboard</a></li>
-<li><a href="/sessions" class="{% if (nav_path|default('')).startswith('/sessions') %}active{% endif %}">Sessions</a></li>
-<li><a href="/snapshots" class="{% if (nav_path|default('')).startswith('/snapshots') %}active{% endif %}">Snapshots</a></li>
-<li><a href="/compare" class="{% if (nav_path|default('')).startswith('/compare') %}active{% endif %}">Compare</a></li>
-<li><a href="/auth" class="{% if (nav_path|default('')).startswith('/auth') %}active{% endif %}">Auth &amp; creds</a></li>
-<li><a href="/podman" class="{% if (nav_path|default('')).startswith('/podman') %}active{% endif %}">Podman</a></li>
+<li><a href="/" class="{% if nav_path|default('') == '/' %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/></svg>Dashboard</span></a></li>
+<li><a href="/sessions" class="{% if (nav_path|default('')).startswith('/sessions') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="M7 9l3 3-3 3M12 15h5"/></svg>Sessions</span></a></li>
+<li><a href="/snapshots" class="{% if (nav_path|default('')).startswith('/snapshots') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3l9 5-9 5-9-5 9-5zM3 13l9 5 9-5"/></svg>Snapshots</span></a></li>
+<li><a href="/compare" class="{% if (nav_path|default('')).startswith('/compare') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path stroke-linecap="round" d="M12 4v16"/></svg>Compare</span></a></li>
+<li><a href="/auth" class="{% if (nav_path|default('')).startswith('/auth') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path stroke-linecap="round" stroke-linejoin="round" d="M11 12L21 2m-4 2l3 3"/></svg>Auth &amp; creds</span></a></li>
+<li><a href="/podman" class="{% if (nav_path|default('')).startswith('/podman') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M21 8l-9-5-9 5v8l9 5 9-5V8zM3 8l9 5 9-5M12 13v8"/></svg>Podman</span></a></li>
 <li class="menu-title">Operate</li>
-<li><a href="/sensors" class="{% if (nav_path|default('')).startswith('/sensors') %}active{% endif %}">Sensors</a></li>
-<li><a href="/logs" class="{% if (nav_path|default('')).startswith('/logs') %}active{% endif %}">Logs</a></li>
-<li><a href="/users" class="{% if (nav_path|default('')).startswith('/users') %}active{% endif %}">Users</a></li>
+<li><a href="/sensors" class="{% if (nav_path|default('')).startswith('/sensors') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="1.6"/><path stroke-linecap="round" d="M7.5 7.5a6.4 6.4 0 000 9M16.5 7.5a6.4 6.4 0 010 9M4.9 4.9a10 10 0 000 14.2M19.1 4.9a10 10 0 010 14.2"/></svg>Sensors</span></a></li>
+<li><a href="/logs" class="{% if (nav_path|default('')).startswith('/logs') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>Logs</span></a></li>
+<li><a href="/users" class="{% if (nav_path|default('')).startswith('/users') %}active{% endif %}"><span class="flex items-center gap-2"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path stroke-linecap="round" d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>Users</span></a></li>
 </ul>
 </div>
+{% endif %}
 </div>
 <script src="/static/htmx.min.js"></script>
 <script src="/static/htmx-sse.min.js"></script>

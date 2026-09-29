@@ -157,6 +157,19 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         resp = await self.client.get("/sessions/nope")
         self.assertEqual(resp.status, 404)
 
+    async def test_empty_states_and_reset_modal(self):
+        await self.login()
+        body = await (await self.client.get("/sessions")).text()
+        self.assertIn("No sessions found.", body)
+        body = await (await self.client.get("/")).text()
+        self.assertIn("No sessions yet.", body)
+        body = await (await self.client.get("/users")).text()
+        self.assertIn('id="pw-dialog"', body)
+        self.assertIn("openPwDialog(this)", body)
+        self.assertNotIn("prompt(", body)
+        body = await (await self.client.get("/logs")).text()
+        self.assertIn("Waiting for log lines", body)
+
     async def test_container_actions(self):
         cid = self.pod.create_container(
             "carbide-fresh-abcd", "img", "honey", 22002, "carbide",

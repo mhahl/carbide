@@ -1,39 +1,53 @@
 {% extends "base.html" %}
 {% block title %}Auth & creds — Carbide{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-3">Auth attempts</h1>
-<form method="get" action="/auth" class="flex flex-wrap gap-2 mb-3">
-<input type="text" name="username" value="{{ username }}" placeholder="username" class="input input-bordered input-sm">
-<input type="text" name="sensor" value="{{ sensor }}" placeholder="sensor id" class="input input-bordered input-sm">
-<select name="accepted" class="select select-bordered select-sm">
+<div class="mb-4" id="attempts">
+<h1 class="text-2xl font-bold tracking-tight">Auth attempts</h1>
+<p class="text-sm opacity-70">SSH login attempts seen by the sensors.</p>
+</div>
+<form method="get" action="/auth" class="flex flex-wrap items-center gap-2 mb-3" role="search">
+<input type="text" name="username" value="{{ username }}" placeholder="username" aria-label="filter by username" class="input input-bordered input-sm">
+<input type="text" name="sensor" value="{{ sensor }}" placeholder="sensor id" aria-label="filter by sensor id" class="input input-bordered input-sm">
+<select name="accepted" aria-label="filter by result" class="select select-bordered select-sm">
 <option value="" {% if accepted == "" %}selected{% endif %}>any result</option>
 <option value="1" {% if accepted == "1" %}selected{% endif %}>accepted</option>
 <option value="0" {% if accepted == "0" %}selected{% endif %}>rejected</option>
 </select>
 <button class="btn btn-sm" type="submit">Filter</button>
+{% if username or sensor or accepted %}<a class="link text-sm" href="/auth">Clear</a>{% endif %}
 </form>
-<div class="overflow-x-auto"><table class="table table-sm table-zebra">
-<thead><tr><th>Time</th><th>Sensor</th><th>Username</th><th>Password</th><th>Result</th><th>Session</th></tr></thead>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">Time</th><th scope="col">Sensor</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for a in rows %}
 <tr><td class="whitespace-nowrap">{{ a.at|ts }}</td><td>{{ a.sensor_id }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
 <td>{% if a.accepted %}<span class="badge badge-success badge-xs">accept{% if a.matched %} · list{% endif %}</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td>
 <td><a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:8] }}</a></td></tr>
+{% else %}
+<tr><td colspan="6" class="text-center opacity-60 py-6">No auth attempts found.</td></tr>
 {% endfor %}
 </tbody></table></div>
-<div class="join mt-3 mb-6">
+<div class="flex items-center gap-3 mt-3 mb-8">
+<div class="join">
 {% if page > 1 %}<a class="join-item btn btn-sm" href="/auth?{{ base_query }}{% if base_query %}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
 {% if has_more %}<a class="join-item btn btn-sm" href="/auth?{{ base_query }}{% if base_query %}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
 </div>
-<h1 class="text-xl font-bold mb-3">Container credentials</h1>
-<div class="overflow-x-auto"><table class="table table-sm table-zebra">
-<thead><tr><th>Sensor</th><th>IP</th><th>Container</th><th>Port</th><th>Password</th><th>Active</th></tr></thead>
+<span class="text-sm opacity-60">Page {{ page }}</span>
+</div>
+<div class="mb-4 scroll-mt-20" id="creds">
+<h2 class="text-2xl font-bold tracking-tight">Container credentials</h2>
+<p class="text-sm opacity-70">SSH credentials of the affinity containers attackers land in.</p>
+</div>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Container</th><th scope="col">Port</th><th scope="col">Password</th><th scope="col">Active</th></tr></thead>
 <tbody>
 {% for c in creds %}
 <tr><td>{{ c.sensor_id }}</td><td class="font-mono">{{ c.attacker_ip }}</td>
 <td class="font-mono"><a class="link" href="/podman/containers/{{ c.container_id }}">{{ c.container_id|short }}</a></td>
 <td class="font-mono">{{ c.ssh_port }}</td><td class="font-mono">{{ c.ssh_password }}</td>
 <td>{% if c.has_activity %}<span class="badge badge-xs">yes</span>{% else %}—{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="6" class="text-center opacity-60 py-6">No affinity credentials yet.</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% endblock %}

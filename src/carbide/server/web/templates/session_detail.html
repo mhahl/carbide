@@ -7,20 +7,20 @@
 <li><span class="font-mono">{{ s.session_id[:12] }}</span></li>
 </ul>
 </div>
-<div class="flex flex-wrap items-center gap-2 mb-3">
-<h1 class="text-xl font-bold font-mono">{{ s.session_id }}</h1>
+<div class="flex flex-wrap items-center gap-2 mb-4">
+<h1 class="text-xl font-bold font-mono break-all">{{ s.session_id }}</h1>
 {% if s.ended_at %}<span class="badge badge-ghost">ended</span>{% else %}<span class="badge badge-success">open</span>{% endif %}
 {% if s.over_quota %}<span class="badge badge-warning">over quota</span>{% endif %}
 </div>
-<div class="grid md:grid-cols-4 gap-2 mb-4 text-sm">
-<div><span class="opacity-60">Sensor</span><br>{{ s.sensor_id }}</div>
-<div><span class="opacity-60">Attacker</span><br><span class="font-mono">{{ s.attacker_ip }}</span></div>
-<div><span class="opacity-60">User</span><br><span class="font-mono">{{ s.username or "—" }}</span></div>
-<div><span class="opacity-60">Container</span><br>{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</div>
-<div><span class="opacity-60">Started</span><br>{{ s.started_at|ts }}</div>
-<div><span class="opacity-60">Ended</span><br>{{ s.ended_at|ts }}</div>
-<div class="md:col-span-2"><span class="opacity-60">Reason</span><br>{{ s.end_reason or "—" }}</div>
-</div>
+<dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mb-4 text-sm">
+<div><dt class="text-xs opacity-60">Sensor</dt><dd class="font-medium">{{ s.sensor_id }}</dd></div>
+<div><dt class="text-xs opacity-60">Attacker</dt><dd class="font-mono font-medium">{{ s.attacker_ip }}</dd></div>
+<div><dt class="text-xs opacity-60">User</dt><dd class="font-mono font-medium">{{ s.username or "—" }}</dd></div>
+<div><dt class="text-xs opacity-60">Container</dt><dd class="font-medium">{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</dd></div>
+<div><dt class="text-xs opacity-60">Started</dt><dd class="font-medium tabular">{{ s.started_at|ts }}</dd></div>
+<div><dt class="text-xs opacity-60">Ended</dt><dd class="font-medium tabular">{{ s.ended_at|ts }}</dd></div>
+<div class="sm:col-span-2"><dt class="text-xs opacity-60">Reason</dt><dd class="font-medium">{{ s.end_reason or "—" }}</dd></div>
+</dl>
 {% if not s.ended_at %}
 <div class="mb-4">
 <button class="btn btn-sm btn-error" hx-post="/actions/sessions/{{ s.session_id }}/kill" hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Terminate this live attacker session?">Kill session</button>
@@ -29,38 +29,51 @@
 <div class="divider"></div>
 
 <h2 class="font-bold mt-4 mb-2">Forensic report</h2>
-{% if report %}<div class="mockup-code text-xs"><pre class="evidence px-4">{{ report }}</pre></div>{% else %}<p class="text-sm opacity-60">No report yet.</p>{% endif %}
+{% if report %}<div class="mockup-code text-xs max-h-[50vh] overflow-y-auto"><pre class="evidence px-4">{{ report }}</pre></div>{% else %}<p class="text-sm opacity-60">No report yet.</p>{% endif %}
 
-<h2 class="font-bold mt-4 mb-2">Container diff ({{ diffs|length }})</h2>
+<h2 class="font-bold mt-6 mb-2">Container diff <span class="badge badge-ghost badge-sm tabular">{{ diffs|length }}</span></h2>
+{% if diffs %}
 <div class="overflow-x-auto"><table class="table table-xs table-zebra">
-<thead><tr><th></th><th>Path</th></tr></thead>
+<thead><tr><th scope="col"><span class="sr-only">Change</span></th><th scope="col">Path</th></tr></thead>
 <tbody>
 {% for d in diffs %}
 <tr><td>{% if d.kind == "added" %}<span class="badge badge-success badge-xs">A</span>{% elif d.kind == "deleted" %}<span class="badge badge-error badge-xs">D</span>{% else %}<span class="badge badge-warning badge-xs">C</span>{% endif %}</td><td class="font-mono">{{ d.path }}</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% else %}
+<p class="text-sm opacity-60">No filesystem changes recorded.</p>
+{% endif %}
 
-<h2 class="font-bold mt-4 mb-2">Files ({{ files|length }})</h2>
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
-<thead><tr><th>Name</th><th>Size</th><th>SHA256</th><th></th></tr></thead>
+<h2 class="font-bold mt-6 mb-2">Files <span class="badge badge-ghost badge-sm tabular">{{ files|length }}</span></h2>
+{% if files %}
+<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
+<thead><tr><th scope="col">Name</th><th scope="col">Size</th><th scope="col">SHA256</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
 <tbody>
 {% for f in files %}
 <tr><td class="font-mono break-all">{{ f.name }}</td><td>{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
 <td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% else %}
+<p class="text-sm opacity-60">No files captured.</p>
+{% endif %}
 
-<h2 class="font-bold mt-4 mb-2">Auth attempts ({{ attempts|length }})</h2>
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
-<thead><tr><th>Time</th><th>Username</th><th>Password</th><th>Result</th></tr></thead>
+<h2 class="font-bold mt-6 mb-2">Auth attempts <span class="badge badge-ghost badge-sm tabular">{{ attempts|length }}</span></h2>
+{% if attempts %}
+<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
+<thead><tr><th scope="col">Time</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th></tr></thead>
 <tbody>
 {% for a in attempts %}
 <tr><td class="whitespace-nowrap">{{ a.at|ts }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
 <td>{% if a.accepted %}<span class="badge badge-success badge-xs">accept{% if a.matched %} · list{% endif %}</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% else %}
+<p class="text-sm opacity-60">No auth attempts recorded.</p>
+{% endif %}
 
-<h2 class="font-bold mt-4 mb-2">Transcript</h2>
+<h2 class="font-bold mt-6 mb-2">Transcript</h2>
+{% if transcript or not s.ended_at %}
 <div class="mockup-code text-xs max-h-96 overflow-y-auto">
 <div id="transcript" class="px-4 py-2"
 {% if not s.ended_at %}hx-get="/sessions/{{ s.session_id }}/transcript?after=0" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
@@ -69,13 +82,20 @@
 {% endfor %}
 </div>
 </div>
+{% else %}
+<p class="text-sm opacity-60">No transcript recorded.</p>
+{% endif %}
 
-<h2 class="font-bold mt-4 mb-2">Squid hits ({{ hits|length }})</h2>
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
-<thead><tr><th>Time</th><th>Method</th><th>URL</th><th>Status</th><th>Bytes</th><th>MIME</th></tr></thead>
+<h2 class="font-bold mt-6 mb-2">Squid hits <span class="badge badge-ghost badge-sm tabular">{{ hits|length }}</span></h2>
+{% if hits %}
+<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
+<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Status</th><th scope="col">Bytes</th><th scope="col">MIME</th></tr></thead>
 <tbody>
 {% for h in hits %}
 <tr><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url }}</td><td>{{ h.status }}</td><td>{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% else %}
+<p class="text-sm opacity-60">No Squid hits for this session.</p>
+{% endif %}
 {% endblock %}

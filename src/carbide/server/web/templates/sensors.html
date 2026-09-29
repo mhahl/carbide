@@ -1,18 +1,19 @@
 {% extends "base.html" %}
 {% block title %}Sensors — Carbide{% endblock %}
 {% block content %}
-<div class="flex items-center gap-3 mb-3">
-<h1 class="text-xl font-bold">Sensors</h1>
+<div class="flex flex-wrap items-center gap-3 mb-1">
+<h1 class="text-2xl font-bold tracking-tight">Sensors</h1>
 <a class="btn btn-sm btn-primary" href="/sensors/new">+ Register sensor</a>
 {% if not mgmt.enabled %}<span class="badge badge-warning">SSH management not configured</span>{% endif %}
 </div>
+<p class="text-sm opacity-70 mb-4">Managed sensors, link state, and hosts seen but not registered.</p>
 <div id="sensor-states" hx-get="/fragments/sensors" hx-trigger="every 30s" hx-swap="innerHTML">
 {% include "_sensors.html" with context %}
 </div>
 {% if unmanaged %}
 <div class="divider mt-6">Seen but not managed</div>
-<div class="overflow-x-auto"><table class="table table-sm table-zebra">
-<thead><tr><th>Sensor</th><th>First seen</th><th>Last seen</th><th></th></tr></thead>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">Sensor</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col"><span class="sr-only">Register</span></th></tr></thead>
 <tbody>
 {% for s in unmanaged %}
 <tr><td class="font-mono">{{ s }}</td><td>{{ seen_full[s].first|ts }}</td><td>{{ seen_full[s].last|ts }}</td>

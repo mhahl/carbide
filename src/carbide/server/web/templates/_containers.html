@@ -1,36 +1,48 @@
 {% if not podman_ok %}
-<div class="alert alert-error mb-4"><span>Podman unreachable: {{ podman_error }}</span></div>
+<div class="alert alert-error mb-4" role="alert"><span>Podman unreachable: {{ podman_error }}</span></div>
 {% else %}
-<h2 class="font-bold mb-2">Containers ({{ containers|length }})</h2>
-<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra">
-<thead><tr><th>Name</th><th>ID</th><th>Image</th><th>Status</th><th></th></tr></thead>
+<h2 class="font-bold mb-2">Containers <span class="badge badge-ghost badge-sm tabular">{{ containers|length }}</span></h2>
+{% if containers %}
+<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">Name</th><th scope="col">ID</th><th scope="col">Image</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 <tbody>
 {% for c in containers %}
 <tr><td class="font-mono">{{ c.name }}{% if c.labels and c.labels.get("carbide") %} <span class="badge badge-xs">carbide</span>{% endif %}</td>
 <td><a class="link font-mono" href="/podman/containers/{{ c.id }}">{{ c.id|short }}</a></td>
 <td class="font-mono text-xs">{{ c.image }}</td>
 <td>{% if c.status == "running" %}<span class="badge badge-success badge-xs">running</span>{% else %}<span class="badge badge-ghost badge-xs">{{ c.status }}</span>{% endif %}</td>
-<td class="whitespace-nowrap"><div class="join">
+<td class="whitespace-nowrap"><div class="join" role="group" aria-label="container actions">
 <button class="join-item btn btn-xs" hx-post="/actions/containers/{{ c.id }}/start" hx-target="#action-status" hx-swap="innerHTML">start</button>
 <button class="join-item btn btn-xs" hx-post="/actions/containers/{{ c.id }}/stop" hx-target="#action-status" hx-swap="innerHTML">stop</button>
 <button class="join-item btn btn-xs" hx-post="/actions/containers/{{ c.id }}/restart" hx-target="#action-status" hx-swap="innerHTML">restart</button>
 </div></td></tr>
 {% endfor %}
 </tbody></table></div>
-<h2 class="font-bold mb-2">Images ({{ images|length }})</h2>
-<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra">
-<thead><tr><th>ID</th><th>Tags</th><th>Size</th></tr></thead>
+{% else %}
+<p class="text-sm opacity-60 mb-6">No containers.</p>
+{% endif %}
+<h2 class="font-bold mb-2">Images <span class="badge badge-ghost badge-sm tabular">{{ images|length }}</span></h2>
+{% if images %}
+<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">ID</th><th scope="col">Tags</th><th scope="col">Size</th></tr></thead>
 <tbody>
 {% for i in images %}
 <tr><td class="font-mono">{{ i.id }}</td><td class="font-mono text-xs break-all">{{ i.tags|join(", ") }}</td><td>{{ i.size|filesizeformat }}</td></tr>
 {% endfor %}
 </tbody></table></div>
-<h2 class="font-bold mb-2">Networks ({{ networks|length }})</h2>
+{% else %}
+<p class="text-sm opacity-60 mb-6">No images.</p>
+{% endif %}
+<h2 class="font-bold mb-2">Networks <span class="badge badge-ghost badge-sm tabular">{{ networks|length }}</span></h2>
+{% if networks %}
 <div class="overflow-x-auto"><table class="table table-sm table-zebra">
-<thead><tr><th>Name</th><th>Driver</th><th>Subnets</th></tr></thead>
+<thead><tr><th scope="col">Name</th><th scope="col">Driver</th><th scope="col">Subnets</th></tr></thead>
 <tbody>
 {% for n in networks %}
 <tr><td class="font-mono">{{ n.name }}</td><td>{{ n.driver }}</td><td class="font-mono">{{ n.subnets|join(", ") }}</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% else %}
+<p class="text-sm opacity-60">No networks.</p>
+{% endif %}
 {% endif %}

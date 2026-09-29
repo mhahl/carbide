@@ -9,10 +9,10 @@
 <li>File</li>
 </ul>
 </div>
-<h1 class="text-xl font-bold font-mono mb-1">{{ path }}</h1>
+<h1 class="text-xl font-bold font-mono break-all mb-1">{{ path }}</h1>
 <p class="mb-3 text-sm"><span class="opacity-60">{{ size|filesizeformat }}</span>
 <a class="link ml-2" href="/podman/containers/{{ cid }}/file?path={{ path }}&download=1">download</a></p>
-{% if note %}<div class="alert mb-3"><span>{{ note }}</span></div>{% endif %}
-{% if truncated %}<div class="alert alert-warning mb-3"><span>Truncated to first 100k chars; download for the full file.</span></div>{% endif %}
-<div class="mockup-code text-xs"><pre class="evidence px-4">{{ text }}</pre></div>
+{% if note %}<div class="alert mb-3" role="status"><span>{{ note }}</span></div>{% endif %}
+{% if truncated %}<div class="alert alert-warning mb-3" role="alert"><span>Truncated to first 100k chars; download for the full file.</span></div>{% endif %}
+{% if text %}<div class="mockup-code text-xs max-h-[70vh] overflow-y-auto"><pre class="evidence px-4">{{ text }}</pre></div>{% endif %}
 {% endblock %}

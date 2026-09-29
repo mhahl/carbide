@@ -1,22 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Login — Carbide{% endblock %}
 {% block content %}
-<div class="flex justify-center pt-16">
-<div class="card card-bordered w-96 bg-base-100">
+<div class="flex justify-center px-4 pt-16">
+<div class="card card-bordered w-full max-w-sm bg-base-100 shadow-xl">
 <div class="card-body">
 <h1 class="card-title font-mono">CARBIDE LOGIN</h1>
-{% if error %}<div class="alert alert-error"><span>{{ error }}</span></div>{% endif %}
+{% if error %}<div class="alert alert-error" role="alert"><span>{{ error }}</span></div>{% endif %}
 <form method="post" action="/login">
 <input type="hidden" name="next" value="{{ next }}">
-<label class="form-control">
-<span class="label-text">Username</span>
-<input type="text" name="username" class="input input-bordered" autocomplete="username" required autofocus>
+<label class="form-control"><span class="label"><span class="label-text">Username</span></span>
+<input type="text" name="username" class="input input-bordered w-full" autocomplete="username" required autofocus>
 </label>
-<label class="form-control mt-2">
-<span class="label-text">Password</span>
-<input type="password" name="password" class="input input-bordered" autocomplete="current-password" required>
+<label class="form-control mt-2"><span class="label"><span class="label-text">Password</span></span>
+<input type="password" name="password" class="input input-bordered w-full" autocomplete="current-password" required>
 </label>
-<button class="btn btn-primary mt-4" type="submit">Log in</button>
+<button class="btn btn-primary btn-block mt-4" type="submit">Log in</button>
 </form>
 </div>
 </div>

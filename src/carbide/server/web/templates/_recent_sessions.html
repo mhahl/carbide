@@ -1,10 +1,12 @@
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
-<thead><tr><th>Session</th><th>Sensor</th><th>IP</th><th>User</th><th>Started</th><th>State</th></tr></thead>
+<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
+<thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">User</th><th scope="col">Started</th><th scope="col">State</th></tr></thead>
 <tbody>
 {% for s in recent %}
-<tr><td><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
+<tr><td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
 <td>{{ s.sensor_id }}</td><td class="font-mono">{{ s.attacker_ip }}</td><td class="font-mono">{{ s.username }}</td>
 <td class="whitespace-nowrap">{{ s.started_at|ts }}</td>
 <td>{% if s.ended_at %}<span class="badge badge-ghost badge-xs">ended</span>{% else %}<span class="badge badge-success badge-xs">open</span>{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="6" class="text-center opacity-60 py-4">No sessions yet.</td></tr>
 {% endfor %}
 </tbody></table></div>

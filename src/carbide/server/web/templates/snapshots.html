@@ -1,18 +1,24 @@
 {% extends "base.html" %}
 {% block title %}Snapshots — Carbide{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-3">Snapshots</h1>
-<form method="get" action="/snapshots" class="flex gap-2 mb-3">
-<input type="text" name="sensor" value="{{ sensor }}" placeholder="sensor id" class="input input-bordered input-sm">
+<div class="mb-4">
+<h1 class="text-2xl font-bold tracking-tight">Snapshots</h1>
+<p class="text-sm opacity-70">Per-affinity container images committed at session end.</p>
+</div>
+<form method="get" action="/snapshots" class="flex flex-wrap items-center gap-2 mb-3" role="search">
+<input type="text" name="sensor" value="{{ sensor }}" placeholder="sensor id" aria-label="filter by sensor id" class="input input-bordered input-sm">
 <button class="btn btn-sm" type="submit">Filter</button>
+{% if sensor %}<a class="link text-sm" href="/snapshots">Clear</a>{% endif %}
 </form>
-<div class="overflow-x-auto"><table class="table table-sm table-zebra">
-<thead><tr><th>Image</th><th>Sensor</th><th>IP</th><th>Container</th><th>Created</th></tr></thead>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">Image</th><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Container</th><th scope="col">Created</th></tr></thead>
 <tbody>
 {% for r in rows %}
 <tr><td class="font-mono break-all">{{ r.image }}</td><td>{{ r.sensor_id }}</td><td class="font-mono">{{ r.ip }}</td>
 <td class="font-mono"><a class="link" href="/podman/containers/{{ r.container_id }}">{{ r.container_id|short }}</a></td>
 <td class="whitespace-nowrap">{{ r.created|ts }}</td></tr>
+{% else %}
+<tr><td colspan="5" class="text-center opacity-60 py-6">No snapshots yet.</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% endblock %}

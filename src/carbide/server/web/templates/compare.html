@@ -1,19 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Compare — Carbide{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-3">Compare session diffs</h1>
-<form method="get" action="/compare" class="flex flex-wrap gap-2 mb-3">
-<input type="text" name="a" value="{{ a_id }}" placeholder="session A id" class="input input-bordered input-sm w-64">
-<input type="text" name="b" value="{{ b_id }}" placeholder="session B id" class="input input-bordered input-sm w-64">
+<div class="mb-4">
+<h1 class="text-2xl font-bold tracking-tight">Compare session diffs</h1>
+<p class="text-sm opacity-70">Side-by-side filesystem changes of two sessions.</p>
+</div>
+<form method="get" action="/compare" class="flex flex-wrap items-center gap-2 mb-3">
+<input type="text" name="a" value="{{ a_id }}" placeholder="session A id" aria-label="session A id" class="input input-bordered input-sm font-mono w-64">
+<input type="text" name="b" value="{{ b_id }}" placeholder="session B id" aria-label="session B id" class="input input-bordered input-sm font-mono w-64">
 <button class="btn btn-sm" type="submit">Compare</button>
 </form>
-{% if rows is not none %}
+{% if rows is none %}
+<p class="text-sm opacity-60">Enter two session IDs to compare their filesystem diffs.</p>
+{% else %}
 <div class="grid md:grid-cols-2 gap-2 mb-3 text-sm">
-<div><span class="opacity-60">A</span> <a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:12] }}</a> {{ a.sensor_id }} {{ a.attacker_ip }}</div>
-<div><span class="opacity-60">B</span> <a class="link font-mono" href="/sessions/{{ b.session_id }}">{{ b.session_id[:12] }}</a> {{ b.sensor_id }} {{ b.attacker_ip }}</div>
+<div><span class="opacity-60">A</span> <a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:12] }}</a> <span class="font-mono">{{ a.sensor_id }} {{ a.attacker_ip }}</span></div>
+<div><span class="opacity-60">B</span> <a class="link font-mono" href="/sessions/{{ b.session_id }}">{{ b.session_id[:12] }}</a> <span class="font-mono">{{ b.sensor_id }} {{ b.attacker_ip }}</span></div>
 </div>
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
-<thead><tr><th>Path</th><th>A</th><th>B</th></tr></thead>
+{% if rows %}
+<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
+<thead><tr><th scope="col">Path</th><th scope="col">A</th><th scope="col">B</th></tr></thead>
 <tbody>
 {% for r in rows %}
 <tr class="{% if r.a != r.b %}bg-base-300{% endif %}"><td class="font-mono">{{ r.path }}</td>
@@ -21,11 +27,14 @@
 <td>{% if r.b %}<span class="badge badge-xs">{{ r.b }}</span>{% else %}—{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% else %}
+<p class="text-sm opacity-60">No filesystem changes recorded for these sessions.</p>
+{% endif %}
 <div class="grid md:grid-cols-2 gap-4 mt-4">
 <div><h2 class="font-bold mb-1">A snapshots</h2>
-<ul class="text-xs font-mono">{% for img, at in a_snaps %}<li>{{ img }}</li>{% endfor %}</ul></div>
+{% if a_snaps %}<ul class="text-xs font-mono space-y-1">{% for img, at in a_snaps %}<li class="break-all">{{ img }}</li>{% endfor %}</ul>{% else %}<p class="text-sm opacity-60">None.</p>{% endif %}</div>
 <div><h2 class="font-bold mb-1">B snapshots</h2>
-<ul class="text-xs font-mono">{% for img, at in b_snaps %}<li>{{ img }}</li>{% endfor %}</ul></div>
+{% if b_snaps %}<ul class="text-xs font-mono space-y-1">{% for img, at in b_snaps %}<li class="break-all">{{ img }}</li>{% endfor %}</ul>{% else %}<p class="text-sm opacity-60">None.</p>{% endif %}</div>
 </div>
 {% endif %}
 {% endblock %}

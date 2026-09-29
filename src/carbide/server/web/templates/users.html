@@ -1,11 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Users — Carbide{% endblock %}
 {% block content %}
-<h1 class="text-xl font-bold mb-3">Console users</h1>
-{% if error %}<div class="alert alert-error mb-3"><span>{{ error }}</span></div>{% endif %}
-{% if notice %}<div class="alert alert-success mb-3"><span>{{ notice }}</span></div>{% endif %}
-<div class="overflow-x-auto mb-4"><table class="table table-sm table-zebra">
-<thead><tr><th>Username</th><th>Created</th><th>State</th><th></th></tr></thead>
+<div class="mb-4">
+<h1 class="text-2xl font-bold tracking-tight">Console users</h1>
+<p class="text-sm opacity-70">Every console user is a full administrator.</p>
+</div>
+{% if error %}<div class="alert alert-error mb-3" role="alert"><span>{{ error }}</span></div>{% endif %}
+{% if notice %}<div class="alert alert-success mb-3" role="status"><span>{{ notice }}</span></div>{% endif %}
+<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra tabular">
+<thead><tr><th scope="col">Username</th><th scope="col">Created</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 <tbody>
 {% for u in rows %}
 <tr><td class="font-mono">{{ u.username }}</td><td>{{ u.created_at|ts }}</td>
@@ -16,17 +19,36 @@
 {% else %}
 <form method="post" action="/users/{{ u.id }}/disable" class="inline"><button class="btn btn-xs" type="submit">disable</button></form>
 {% endif %}
-<form method="post" action="/users/{{ u.id }}/password" class="inline" onsubmit="var p=prompt('New password (min 8 chars):'); if(!p||p.length<8){alert('min 8 chars');return false;} this.password.value=p; return true;">
-<input type="hidden" name="password" value="">
-<button class="btn btn-xs" type="submit">reset pw</button>
-</form>
+<button class="btn btn-xs" type="button" data-uid="{{ u.id }}" data-username="{{ u.username }}" onclick="openPwDialog(this)">reset pw</button>
 </td></tr>
 {% endfor %}
 </tbody></table></div>
 <h2 class="font-bold mb-2">Create user</h2>
-<form method="post" action="/users/create" class="flex gap-2">
-<input type="text" name="username" placeholder="username" class="input input-bordered input-sm" required>
-<input type="password" name="password" placeholder="password (min 8)" class="input input-bordered input-sm" required>
+<form method="post" action="/users/create" class="flex flex-wrap items-center gap-2">
+<input type="text" name="username" placeholder="username" aria-label="new username" class="input input-bordered input-sm" required>
+<input type="password" name="password" placeholder="password (min 8)" aria-label="new password" class="input input-bordered input-sm" minlength="8" required>
 <button class="btn btn-sm btn-primary" type="submit">Create</button>
 </form>
+<dialog id="pw-dialog" class="modal">
+<div class="modal-box">
+<h3 class="font-bold">Reset password for <span id="pw-user" class="font-mono"></span></h3>
+<form id="pw-form" method="post" action="">
+<label class="form-control mt-3"><span class="label"><span class="label-text">New password (min 8 chars)</span></span>
+<input type="password" name="password" class="input input-bordered" minlength="8" required autocomplete="new-password"></label>
+<div class="modal-action">
+<button type="button" class="btn" onclick="document.getElementById('pw-dialog').close()">Cancel</button>
+<button class="btn btn-primary" type="submit">Reset</button>
+</div>
+</form>
+</div>
+<form method="dialog" class="modal-backdrop"><button>close</button></form>
+</dialog>
+<script>
+function openPwDialog(btn) {
+  var dialog = document.getElementById("pw-dialog");
+  document.getElementById("pw-form").action = "/users/" + btn.dataset.uid + "/password";
+  document.getElementById("pw-user").textContent = btn.dataset.username;
+  dialog.showModal();
+}
+</script>
 {% endblock %}

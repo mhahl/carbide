@@ -7,36 +7,56 @@
 <li>{% if is_new %}Register{% else %}<span class="font-mono">{{ m.sensor_id }}</span>{% endif %}</li>
 </ul>
 </div>
-<h1 class="text-xl font-bold mb-3">{% if is_new %}Register sensor{% else %}Sensor <span class="font-mono">{{ m.sensor_id }}</span>{% endif %}</h1>
-{% if error %}<div class="alert alert-error mb-3"><span>{{ error }}</span></div>{% endif %}
+<h1 class="text-2xl font-bold tracking-tight mb-4">{% if is_new %}Register sensor{% else %}Sensor <span class="font-mono">{{ m.sensor_id }}</span>{% endif %}</h1>
+{% if error %}<div class="alert alert-error mb-3" role="alert"><span>{{ error }}</span></div>{% endif %}
 <div class="card card-bordered bg-base-100 max-w-3xl">
 <div class="card-body">
-<form method="post" action="/sensors/save" class="grid md:grid-cols-2 gap-3">
-<label class="form-control"><span class="label-text">Sensor ID</span>
+<form method="post" action="/sensors/save" class="space-y-5">
+<fieldset class="min-w-0">
+<legend class="text-sm font-bold mb-2">Identity</legend>
+<div class="grid md:grid-cols-2 gap-3">
+<label class="form-control"><span class="label"><span class="label-text">Sensor ID</span></span>
 <input type="text" name="sensor_id" value="{{ m.sensor_id }}" class="input input-bordered input-sm" {% if not is_new %}readonly{% endif %} required></label>
-<label class="form-control"><span class="label-text">SSH host</span>
-<input type="text" name="ssh_host" value="{{ m.ssh_host }}" class="input input-bordered input-sm" required></label>
-<label class="form-control"><span class="label-text">SSH port</span>
-<input type="number" name="ssh_port" value="{{ m.ssh_port }}" class="input input-bordered input-sm"></label>
-<label class="form-control"><span class="label-text">SSH user (blank = service default)</span>
-<input type="text" name="ssh_user" value="{{ m.ssh_user }}" class="input input-bordered input-sm"></label>
-<label class="form-control md:col-span-2"><span class="label-text">Remote dir (sensor checkout path; required for provisioning)</span>
-<input type="text" name="remote_dir" value="{{ m.remote_dir }}" placeholder="/root/carbide-sensor" class="input input-bordered input-sm font-mono"></label>
-<label class="form-control"><span class="label-text">Listen addr</span>
-<input type="text" name="listen_addr" value="{{ m.listen_addr }}" class="input input-bordered input-sm"></label>
-<label class="form-control"><span class="label-text">Listen port</span>
-<input type="number" name="listen_port" value="{{ m.listen_port }}" class="input input-bordered input-sm"></label>
-<label class="form-control"><span class="label-text">Server host (sensor → server API)</span>
-<input type="text" name="server_host" value="{{ m.server_host }}" class="input input-bordered input-sm"></label>
-<label class="form-control"><span class="label-text">Server port</span>
-<input type="number" name="server_port" value="{{ m.server_port }}" class="input input-bordered input-sm"></label>
-<label class="form-control"><span class="label-text">Accept probability (0–1)</span>
-<input type="number" name="accept_probability" value="{{ m.accept_probability }}" step="0.01" min="0" max="1" class="input input-bordered input-sm"></label>
-<label class="form-control"><span class="label-text">Notes</span>
+<label class="form-control"><span class="label"><span class="label-text">Notes</span></span>
 <input type="text" name="notes" value="{{ m.notes }}" class="input input-bordered input-sm"></label>
-<label class="form-control md:col-span-2"><span class="label-text">Password allow-list (one per line)</span>
+</div>
+</fieldset>
+<fieldset class="min-w-0">
+<legend class="text-sm font-bold mb-2">SSH management</legend>
+<div class="grid md:grid-cols-2 gap-3">
+<label class="form-control"><span class="label"><span class="label-text">SSH host</span></span>
+<input type="text" name="ssh_host" value="{{ m.ssh_host }}" class="input input-bordered input-sm" required></label>
+<label class="form-control"><span class="label"><span class="label-text">SSH port</span></span>
+<input type="number" name="ssh_port" value="{{ m.ssh_port }}" class="input input-bordered input-sm"></label>
+<label class="form-control"><span class="label"><span class="label-text">SSH user (blank = service default)</span></span>
+<input type="text" name="ssh_user" value="{{ m.ssh_user }}" class="input input-bordered input-sm"></label>
+<label class="form-control"><span class="label"><span class="label-text">Remote dir (sensor checkout path; required for provisioning)</span></span>
+<input type="text" name="remote_dir" value="{{ m.remote_dir }}" placeholder="/root/carbide-sensor" class="input input-bordered input-sm font-mono"></label>
+</div>
+</fieldset>
+<fieldset class="min-w-0">
+<legend class="text-sm font-bold mb-2">Sensor runtime</legend>
+<div class="grid md:grid-cols-2 gap-3">
+<label class="form-control"><span class="label"><span class="label-text">Listen addr</span></span>
+<input type="text" name="listen_addr" value="{{ m.listen_addr }}" class="input input-bordered input-sm"></label>
+<label class="form-control"><span class="label"><span class="label-text">Listen port</span></span>
+<input type="number" name="listen_port" value="{{ m.listen_port }}" class="input input-bordered input-sm"></label>
+<label class="form-control"><span class="label"><span class="label-text">Server host (sensor → server API)</span></span>
+<input type="text" name="server_host" value="{{ m.server_host }}" class="input input-bordered input-sm"></label>
+<label class="form-control"><span class="label"><span class="label-text">Server port</span></span>
+<input type="number" name="server_port" value="{{ m.server_port }}" class="input input-bordered input-sm"></label>
+</div>
+</fieldset>
+<fieldset class="min-w-0">
+<legend class="text-sm font-bold mb-2">Auth policy</legend>
+<div class="grid md:grid-cols-2 gap-3">
+<label class="form-control"><span class="label"><span class="label-text">Accept probability (0–1)</span></span>
+<input type="number" name="accept_probability" value="{{ m.accept_probability }}" step="0.01" min="0" max="1" class="input input-bordered input-sm"></label>
+<label class="form-control md:col-span-2"><span class="label"><span class="label-text">Password allow-list (one per line)</span></span>
 <textarea name="passwords" rows="5" class="textarea textarea-bordered font-mono">{{ passwords|default("") }}</textarea></label>
-<div class="md:col-span-2"><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
+</div>
+</fieldset>
+<div><button class="btn btn-primary btn-sm" type="submit">Save</button></div>
 </form>
 </div>
 </div>

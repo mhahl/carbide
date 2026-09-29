@@ -7,11 +7,15 @@
 <li><span class="font-mono">{{ cid|short }}</span></li>
 </ul>
 </div>
-<h1 class="text-xl font-bold font-mono mb-1">{{ cid }}</h1>
+<h1 class="text-xl font-bold font-mono break-all mb-1">{{ cid }}</h1>
 <p class="mb-3">{% if status == "running" %}<span class="badge badge-success">running</span>{% else %}<span class="badge badge-ghost">{{ status }}</span>{% endif %}
 {% if ip %}<span class="font-mono text-sm ml-2">{{ ip }}</span>{% endif %}</p>
 {% if aff %}
-<p class="text-sm mb-3">Affinity: {{ aff.sensor_id }} / <span class="font-mono">{{ aff.attacker_ip }}</span> (port {{ aff.ssh_port }})</p>
+<dl class="grid sm:grid-cols-3 gap-x-4 gap-y-2 mb-4 text-sm">
+<div><dt class="text-xs opacity-60">Affinity sensor</dt><dd class="font-medium">{{ aff.sensor_id }}</dd></div>
+<div><dt class="text-xs opacity-60">Affinity IP</dt><dd class="font-mono font-medium">{{ aff.attacker_ip }}</dd></div>
+<div><dt class="text-xs opacity-60">SSH port</dt><dd class="font-mono font-medium">{{ aff.ssh_port }}</dd></div>
+</dl>
 {% endif %}
 <div class="flex flex-wrap gap-2 mb-4">
 <div class="join">
@@ -26,5 +30,5 @@
 {% endif %}
 </div>
 <h2 class="font-bold mb-2">Inspect</h2>
-<div class="mockup-code text-xs"><pre class="evidence px-4">{{ pretty }}</pre></div>
+<div class="mockup-code text-xs max-h-[70vh] overflow-y-auto"><pre class="evidence px-4">{{ pretty }}</pre></div>
 {% endblock %}
