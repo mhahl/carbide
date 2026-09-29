@@ -1,23 +1,34 @@
 {% extends "base.html" %}
 {% block title %}Container {{ cid|short }} — Carbide{% endblock %}
 {% block content %}
-<div class="breadcrumbs text-sm mb-2">
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="breadcrumbs text-sm">
 <ul>
 <li><a href="/podman">Podman</a></li>
 <li><span class="font-mono">{{ cid|short }}</span></li>
 </ul>
 </div>
-<h1 class="text-xl font-bold font-mono break-all mb-1">{{ cid }}</h1>
-<p class="mb-3">{% if status == "running" %}<span class="badge badge-success">running</span>{% else %}<span class="badge badge-ghost">{{ status }}</span>{% endif %}
-{% if ip %}<span class="font-mono text-sm ml-2">{{ ip }}</span>{% endif %}</p>
+<h1 class="text-xl font-semibold font-mono break-all">{{ cid }}</h1>
+<p class="flex flex-wrap items-center gap-2">{% if status == "running" %}<span class="badge badge-success badge-soft">running</span>{% else %}<span class="badge badge-ghost">{{ status }}</span>{% endif %}
+{% if ip %}<span class="font-mono text-sm">{{ ip }}</span>{% endif %}</p>
+</div>
 {% if aff %}
-<dl class="grid sm:grid-cols-3 gap-x-4 gap-y-2 mb-4 text-sm">
-<div><dt class="text-xs opacity-60">Affinity sensor</dt><dd class="font-medium">{{ aff.sensor_id }}</dd></div>
-<div><dt class="text-xs opacity-60">Affinity IP</dt><dd class="font-mono font-medium">{{ aff.attacker_ip }}</dd></div>
-<div><dt class="text-xs opacity-60">SSH port</dt><dd class="font-mono font-medium">{{ aff.ssh_port }}</dd></div>
+<section class="card card-border bg-base-100" aria-label="Affinity">
+<div class="card-body p-4 gap-2">
+<h2 class="font-medium">Affinity</h2>
+<dl class="grid sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+<div><dt class="text-xs text-base-content/60">Sensor</dt><dd class="font-medium">{{ aff.sensor_id }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Attacker IP</dt><dd class="font-mono font-medium">{{ aff.attacker_ip }}</dd></div>
+<div><dt class="text-xs text-base-content/60">SSH port</dt><dd class="font-mono font-medium">{{ aff.ssh_port }}</dd></div>
 </dl>
+</div>
+</section>
 {% endif %}
-<div class="flex flex-wrap gap-2 mb-4">
+<section class="card card-border bg-base-100" aria-label="Container actions">
+<div class="card-body p-4 gap-2">
+<h2 class="font-medium">Actions</h2>
+<div class="flex flex-wrap items-center gap-2">
 <div class="join">
 <button class="join-item btn btn-sm" hx-post="/actions/containers/{{ cid }}/start" hx-target="#action-status" hx-swap="innerHTML">Start</button>
 <button class="join-item btn btn-sm" hx-post="/actions/containers/{{ cid }}/stop" hx-target="#action-status" hx-swap="innerHTML">Stop</button>
@@ -26,9 +37,23 @@
 <a class="btn btn-sm" href="/podman/containers/{{ cid }}/diff">Live diff</a>
 {% if aff %}
 <button class="btn btn-sm" hx-post="/actions/snapshots" hx-vals='{"container_id": "{{ cid }}", "sensor_id": "{{ aff.sensor_id }}", "ip": "{{ aff.attacker_ip }}"}' hx-target="#action-status" hx-swap="innerHTML">Snapshot now</button>
-<button class="btn btn-sm btn-error" hx-post="/actions/affinities/evict" hx-vals='{"sensor_id": "{{ aff.sensor_id }}", "ip": "{{ aff.attacker_ip }}"}' hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Archive and evict {{ aff.sensor_id }}/{{ aff.attacker_ip }}?">Evict affinity</button>
 {% endif %}
 </div>
-<h2 class="font-bold mb-2">Inspect</h2>
-<div class="mockup-code text-xs max-h-[70vh] overflow-y-auto"><pre class="evidence px-4">{{ pretty }}</pre></div>
+{% if aff %}
+<div class="border-t border-base-300 pt-2 mt-2">
+<div class="flex flex-wrap items-center gap-2">
+<button class="btn btn-sm btn-error" hx-post="/actions/affinities/evict" hx-vals='{"sensor_id": "{{ aff.sensor_id }}", "ip": "{{ aff.attacker_ip }}"}' hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Archive and evict {{ aff.sensor_id }}/{{ aff.attacker_ip }}?">Evict affinity</button>
+<p class="text-xs text-base-content/60">Archives evidence, then releases {{ aff.sensor_id }}/{{ aff.attacker_ip }}. Cannot be undone.</p>
+</div>
+</div>
+{% endif %}
+</div>
+</section>
+<section class="card card-border bg-base-100" aria-label="Container inspect">
+<div class="card-body p-4 gap-2">
+<h2 class="font-medium">Inspect</h2>
+<div class="mockup-code text-xs max-h-160 overflow-y-auto"><pre class="px-4 whitespace-pre-wrap break-all">{{ pretty }}</pre></div>
+</div>
+</section>
+</div>
 {% endblock %}

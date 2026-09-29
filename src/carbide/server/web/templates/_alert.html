@@ -1,2 +1,4 @@
-<div class="alert {{ 'alert-success' if ok else 'alert-error' }} mb-4" role="{{ 'status' if ok else 'alert' }}"><span>{{ message }}</span><button type="button" class="btn btn-ghost btn-xs ml-auto" aria-label="dismiss" onclick="this.closest('.alert').remove()"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
-{% if output %}<div class="mockup-code text-xs mb-4 max-h-96 overflow-y-auto"><pre class="evidence px-4">{{ output }}</pre></div>{% endif %}
+<div class="flex flex-col gap-4 pb-4">
+<div class="alert {{ 'alert-success' if ok else 'alert-error' }}" role="{{ 'status' if ok else 'alert' }}"><span>{{ message }}</span><button type="button" class="btn btn-ghost btn-xs ms-auto" aria-label="dismiss" onclick="this.closest('.alert').remove()"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+{% if output %}<div class="mockup-code text-xs max-h-96 overflow-y-auto"><pre class="px-4 whitespace-pre-wrap break-all">{{ output }}</pre></div>{% endif %}
+</div>

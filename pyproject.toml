@@ -26,4 +26,4 @@ carbide-server = "carbide.server.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"carbide.server.web" = ["templates/*.html", "static/*"]
+"carbide.server.web" = ["templates/*.html", "static/*", "static/fonts/*"]

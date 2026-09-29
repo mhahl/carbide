@@ -1,24 +1,40 @@
 {% extends "base.html" %}
 {% block title %}Sensors — Carbide{% endblock %}
 {% block content %}
-<div class="flex flex-wrap items-center gap-3 mb-1">
-<h1 class="text-2xl font-bold tracking-tight">Sensors</h1>
-<a class="btn btn-sm btn-primary" href="/sensors/new">+ Register sensor</a>
-{% if not mgmt.enabled %}<span class="badge badge-warning">SSH management not configured</span>{% endif %}
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="flex flex-wrap items-center gap-2">
+<h1 class="text-2xl font-semibold tracking-tight">Sensors</h1>
+<a class="btn btn-sm btn-primary" href="/sensors/new">
+<svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" d="M12 4v16m8-8H4"/></svg>
+Register sensor</a>
+{% if not mgmt.enabled %}<span class="badge badge-warning badge-soft">SSH management not configured</span>{% endif %}
 </div>
-<p class="text-sm opacity-70 mb-4">Managed sensors, link state, and hosts seen but not registered.</p>
+<p class="text-sm text-base-content/60">Managed sensors, link state, and hosts seen but not registered.</p>
+</div>
+<section class="card card-border bg-base-100" aria-label="Managed sensors">
+<div class="card-body p-4 gap-2">
 <div id="sensor-states" hx-get="/fragments/sensors" hx-trigger="every 30s" hx-swap="innerHTML">
 {% include "_sensors.html" with context %}
 </div>
+</div>
+</section>
 {% if unmanaged %}
-<div class="divider mt-6">Seen but not managed</div>
-<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular">
+<div class="flex flex-col gap-6">
+<div class="divider">Seen but not managed</div>
+<section class="card card-border bg-base-100" aria-label="Unmanaged sensors">
+<div class="card-body p-4 gap-2">
+<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular-nums">
 <thead><tr><th scope="col">Sensor</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col"><span class="sr-only">Register</span></th></tr></thead>
 <tbody>
 {% for s in unmanaged %}
-<tr><td class="font-mono">{{ s }}</td><td>{{ seen_full[s].first|ts }}</td><td>{{ seen_full[s].last|ts }}</td>
+<tr class="hover:bg-base-200"><td class="font-mono">{{ s }}</td><td>{{ seen_full[s].first|ts }}</td><td>{{ seen_full[s].last|ts }}</td>
 <td><a class="link" href="/sensors/new?sensor_id={{ s }}">register</a></td></tr>
 {% endfor %}
 </tbody></table></div>
+</div>
+</section>
+</div>
 {% endif %}
+</div>
 {% endblock %}

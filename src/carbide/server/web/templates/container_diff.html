@@ -1,28 +1,44 @@
 {% extends "base.html" %}
 {% block title %}Live diff {{ cid|short }} — Carbide{% endblock %}
 {% block content %}
-<div class="breadcrumbs text-sm mb-2">
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="breadcrumbs text-sm">
 <ul>
 <li><a href="/podman">Podman</a></li>
 <li><a class="font-mono" href="/podman/containers/{{ cid }}">{{ cid|short }}</a></li>
 <li>Diff</li>
 </ul>
 </div>
-<h1 class="text-xl font-bold mb-3">Live diff: <span class="font-mono">{{ cid|short }}</span> <span class="badge badge-ghost badge-sm tabular">{{ rows|length }}</span></h1>
+<div class="flex flex-wrap items-center gap-2">
+<h1 class="text-xl font-semibold">Live diff: <span class="font-mono">{{ cid|short }}</span></h1>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ rows|length }}</span>
+</div>
+</div>
 {% if warnings %}
-<div class="alert alert-warning mb-3" role="alert"><span>{{ warnings|join("; ") }}</span></div>
+<div class="alert alert-warning alert-soft" role="alert"><span>{{ warnings|join("; ") }}</span></div>
 {% endif %}
+<section class="card card-border bg-base-100" aria-label="Filesystem changes">
+<div class="card-body p-4 gap-2">
 {% if rows %}
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
+<div class="overflow-x-auto max-h-160"><table class="table table-xs table-zebra table-pin-rows">
 <thead><tr><th scope="col"><span class="sr-only">Change</span></th><th scope="col">Path</th><th scope="col"><span class="sr-only">View</span></th></tr></thead>
 <tbody>
 {% for r in rows %}
-<tr><td>{% if r.kind == "added" %}<span class="badge badge-success badge-xs">A</span>{% elif r.kind == "deleted" %}<span class="badge badge-error badge-xs">D</span>{% else %}<span class="badge badge-warning badge-xs">C</span>{% endif %}</td>
+<tr class="hover:bg-base-200"><td>{% if r.kind == "added" %}<span class="badge badge-success badge-soft badge-xs">A</span>{% elif r.kind == "deleted" %}<span class="badge badge-error badge-soft badge-xs">D</span>{% else %}<span class="badge badge-warning badge-soft badge-xs">C</span>{% endif %}</td>
 <td class="font-mono">{{ r.path }}</td>
 <td>{% if r.kind != "deleted" %}<a class="link" href="/podman/containers/{{ cid }}/file?path={{ r.path }}">view</a>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<p class="text-sm opacity-60">No filesystem changes in this container.</p>
+<div class="flex flex-col items-center gap-2 py-6 text-center">
+<span class="size-8 rounded-full bg-base-200 flex items-center justify-center" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+</span>
+<p class="text-sm text-base-content/60">No filesystem changes in this container.</p>
+</div>
 {% endif %}
+</div>
+</section>
+</div>
 {% endblock %}

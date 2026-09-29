@@ -1,101 +1,147 @@
 {% extends "base.html" %}
 {% block title %}Session {{ s.session_id[:12] }} — Carbide{% endblock %}
 {% block content %}
-<div class="breadcrumbs text-sm mb-2">
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="breadcrumbs text-sm">
 <ul>
 <li><a href="/sessions">Sessions</a></li>
 <li><span class="font-mono">{{ s.session_id[:12] }}</span></li>
 </ul>
 </div>
-<div class="flex flex-wrap items-center gap-2 mb-4">
-<h1 class="text-xl font-bold font-mono break-all">{{ s.session_id }}</h1>
-{% if s.ended_at %}<span class="badge badge-ghost">ended</span>{% else %}<span class="badge badge-success">open</span>{% endif %}
-{% if s.over_quota %}<span class="badge badge-warning">over quota</span>{% endif %}
+<div class="flex flex-wrap items-center gap-2">
+<h1 class="text-xl font-semibold font-mono break-all">{{ s.session_id }}</h1>
+{% if s.ended_at %}<span class="badge badge-ghost">ended</span>{% else %}<span class="badge badge-success badge-soft">open</span>{% endif %}
+{% if s.over_quota %}<span class="badge badge-warning badge-soft">over quota</span>{% endif %}
 </div>
-<dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-3 mb-4 text-sm">
-<div><dt class="text-xs opacity-60">Sensor</dt><dd class="font-medium">{{ s.sensor_id }}</dd></div>
-<div><dt class="text-xs opacity-60">Attacker</dt><dd class="font-mono font-medium">{{ s.attacker_ip }}</dd></div>
-<div><dt class="text-xs opacity-60">User</dt><dd class="font-mono font-medium">{{ s.username or "—" }}</dd></div>
-<div><dt class="text-xs opacity-60">Container</dt><dd class="font-medium">{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</dd></div>
-<div><dt class="text-xs opacity-60">Started</dt><dd class="font-medium tabular">{{ s.started_at|ts }}</dd></div>
-<div><dt class="text-xs opacity-60">Ended</dt><dd class="font-medium tabular">{{ s.ended_at|ts }}</dd></div>
-<div class="sm:col-span-2"><dt class="text-xs opacity-60">Reason</dt><dd class="font-medium">{{ s.end_reason or "—" }}</dd></div>
+</div>
+<section class="card card-border bg-base-100" aria-label="Session facts">
+<div class="card-body p-4 gap-2">
+<dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+<div><dt class="text-xs text-base-content/60">Sensor</dt><dd class="font-medium"><a class="link" href="/sessions?sensor={{ s.sensor_id }}">{{ s.sensor_id }}</a></dd></div>
+<div><dt class="text-xs text-base-content/60">Attacker</dt><dd class="font-mono font-medium"><a class="link" href="/sessions?ip={{ s.attacker_ip }}">{{ s.attacker_ip }}</a></dd></div>
+<div><dt class="text-xs text-base-content/60">User</dt><dd class="font-mono font-medium">{{ s.username or "—" }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Container</dt><dd class="font-medium">{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</dd></div>
+<div><dt class="text-xs text-base-content/60">Started</dt><dd class="font-medium tabular-nums">{{ s.started_at|ts }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Ended</dt><dd class="font-medium tabular-nums">{{ s.ended_at|ts }}</dd></div>
+<div class="sm:col-span-2"><dt class="text-xs text-base-content/60">Reason</dt><dd class="font-medium">{{ s.end_reason or "—" }}</dd></div>
 </dl>
 {% if not s.ended_at %}
-<div class="mb-4">
+<div class="flex flex-wrap items-center gap-2">
 <button class="btn btn-sm btn-error" hx-post="/actions/sessions/{{ s.session_id }}/kill" hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Terminate this live attacker session?">Kill session</button>
+<p class="text-xs text-base-content/60">Sends kill_session to {{ s.sensor_id }}; the session stays recorded.</p>
 </div>
 {% endif %}
-<div class="divider"></div>
+</div>
+</section>
 
-<h2 class="font-bold mt-4 mb-2">Forensic report</h2>
-{% if report %}<div class="mockup-code text-xs max-h-[50vh] overflow-y-auto"><pre class="evidence px-4">{{ report }}</pre></div>{% else %}<p class="text-sm opacity-60">No report yet.</p>{% endif %}
+<section class="card card-border bg-base-100" aria-label="Forensic report">
+<div class="card-body p-4 gap-2">
+<h2 class="font-medium">Forensic report</h2>
+{% if report %}<div class="mockup-code text-xs max-h-96 overflow-y-auto"><pre class="px-4 whitespace-pre-wrap break-all">{{ report }}</pre></div>{% else %}<p class="text-sm text-base-content/60">No report yet.</p>{% endif %}
+</div>
+</section>
 
-<h2 class="font-bold mt-6 mb-2">Container diff <span class="badge badge-ghost badge-sm tabular">{{ diffs|length }}</span></h2>
+<div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+<section class="card card-border bg-base-100" aria-label="Container diff">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">Container diff</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ diffs|length }}</span>
+</div>
 {% if diffs %}
-<div class="overflow-x-auto"><table class="table table-xs table-zebra">
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows">
 <thead><tr><th scope="col"><span class="sr-only">Change</span></th><th scope="col">Path</th></tr></thead>
 <tbody>
 {% for d in diffs %}
-<tr><td>{% if d.kind == "added" %}<span class="badge badge-success badge-xs">A</span>{% elif d.kind == "deleted" %}<span class="badge badge-error badge-xs">D</span>{% else %}<span class="badge badge-warning badge-xs">C</span>{% endif %}</td><td class="font-mono">{{ d.path }}</td></tr>
+<tr class="hover:bg-base-200"><td>{% if d.kind == "added" %}<span class="badge badge-success badge-soft badge-xs">A</span>{% elif d.kind == "deleted" %}<span class="badge badge-error badge-soft badge-xs">D</span>{% else %}<span class="badge badge-warning badge-soft badge-xs">C</span>{% endif %}</td><td class="font-mono">{{ d.path }}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<p class="text-sm opacity-60">No filesystem changes recorded.</p>
+<p class="text-sm text-base-content/60">No filesystem changes recorded.</p>
 {% endif %}
+</div>
+</section>
 
-<h2 class="font-bold mt-6 mb-2">Files <span class="badge badge-ghost badge-sm tabular">{{ files|length }}</span></h2>
+<section class="card card-border bg-base-100" aria-label="Captured files">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">Files</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ files|length }}</span>
+</div>
 {% if files %}
-<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
-<thead><tr><th scope="col">Name</th><th scope="col">Size</th><th scope="col">SHA256</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Name</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
 <tbody>
 {% for f in files %}
-<tr><td class="font-mono break-all">{{ f.name }}</td><td>{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
+<tr class="hover:bg-base-200"><td class="font-mono break-all">{{ f.name }}</td><td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
 <td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<p class="text-sm opacity-60">No files captured.</p>
+<p class="text-sm text-base-content/60">No files captured.</p>
 {% endif %}
+</div>
+</section>
+</div>
 
-<h2 class="font-bold mt-6 mb-2">Auth attempts <span class="badge badge-ghost badge-sm tabular">{{ attempts|length }}</span></h2>
+<section class="card card-border bg-base-100" aria-label="Session auth attempts">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">Auth attempts</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ attempts|length }}</span>
+</div>
 {% if attempts %}
-<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
 <thead><tr><th scope="col">Time</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th></tr></thead>
 <tbody>
 {% for a in attempts %}
-<tr><td class="whitespace-nowrap">{{ a.at|ts }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
-<td>{% if a.accepted %}<span class="badge badge-success badge-xs">accept{% if a.matched %} · list{% endif %}</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ a.at|ts }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
+<td>{% if a.accepted %}<span class="badge badge-success badge-soft badge-xs">accept{% if a.matched %} · list{% endif %}</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<p class="text-sm opacity-60">No auth attempts recorded.</p>
+<p class="text-sm text-base-content/60">No auth attempts recorded.</p>
 {% endif %}
+</div>
+</section>
 
-<h2 class="font-bold mt-6 mb-2">Transcript</h2>
+<section class="card card-border bg-base-100" aria-label="Session transcript">
+<div class="card-body p-4 gap-2">
+<h2 class="font-medium">Transcript</h2>
 {% if transcript or not s.ended_at %}
 <div class="mockup-code text-xs max-h-96 overflow-y-auto">
-<div id="transcript" class="px-4 py-2"
+<div id="transcript" class="px-4 py-2 flex flex-col gap-1"
 {% if not s.ended_at %}hx-get="/sessions/{{ s.session_id }}/transcript?after=0" hx-trigger="every 5s" hx-swap="innerHTML"{% endif %}>
 {% for c in transcript %}
-<div class="t-{{ 'in' if c.direction == 'in' else 'out' }} pl-2 mb-1"><span class="opacity-60">[{{ c.channel }} {{ c.direction }}]</span> {{ c.text }}</div>
+<div class="border-s-2 {{ 'border-base-content/40' if c.direction == 'in' else 'border-base-content/20' }} ps-2"><span class="text-base-content/60">[{{ c.channel }} {{ c.direction }}]</span> {{ c.text }}</div>
 {% endfor %}
 </div>
 </div>
 {% else %}
-<p class="text-sm opacity-60">No transcript recorded.</p>
+<p class="text-sm text-base-content/60">No transcript recorded.</p>
 {% endif %}
+</div>
+</section>
 
-<h2 class="font-bold mt-6 mb-2">Squid hits <span class="badge badge-ghost badge-sm tabular">{{ hits|length }}</span></h2>
+<section class="card card-border bg-base-100" aria-label="Session Squid hits">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">Squid hits</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ hits|length }}</span>
+</div>
 {% if hits %}
-<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col">Status</th><th scope="col">Bytes</th><th scope="col">MIME</th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right">Status</th><th scope="col" class="text-right">Bytes</th><th scope="col">MIME</th></tr></thead>
 <tbody>
 {% for h in hits %}
-<tr><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url }}</td><td>{{ h.status }}</td><td>{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}
-<p class="text-sm opacity-60">No Squid hits for this session.</p>
+<p class="text-sm text-base-content/60">No Squid hits for this session.</p>
 {% endif %}
+</div>
+</section>
+</div>
 {% endblock %}

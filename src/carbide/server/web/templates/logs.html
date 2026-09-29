@@ -1,40 +1,30 @@
 {% extends "base.html" %}
 {% block title %}Logs — Carbide{% endblock %}
 {% block content %}
-<div class="flex flex-wrap items-center gap-3 mb-3">
+<div class="flex flex-col gap-6">
+<div class="flex flex-wrap items-center gap-2">
 <div>
-<h1 class="text-2xl font-bold tracking-tight">Server logs</h1>
-<p class="text-sm opacity-70">Live tail of the server log.</p>
+<h1 class="text-2xl font-semibold tracking-tight">Server logs</h1>
+<p class="text-sm text-base-content/60">Live tail of the server log.</p>
 </div>
-<label class="label cursor-pointer gap-2 ml-auto"><input id="log-follow" type="checkbox" class="checkbox checkbox-sm" checked><span class="label-text">Follow</span></label>
-<span id="log-count" class="text-xs opacity-60 tabular" aria-live="polite"></span>
+<fieldset class="fieldset ms-auto">
+<label class="label cursor-pointer gap-2" for="log-follow">
+<input id="log-follow" type="checkbox" class="toggle toggle-sm" checked>
+Follow
+</label>
+</fieldset>
+<span id="log-count" class="text-xs text-base-content/60 tabular-nums" aria-live="polite"></span>
 </div>
-<div id="logbox" class="mockup-code text-xs h-[60vh] overflow-y-auto">
-{% if not lines %}<div id="log-empty" class="px-4 py-2 opacity-60">Waiting for log lines…</div>{% endif %}
+<section class="card card-border bg-base-100" aria-label="Server log tail">
+<div class="card-body p-4 gap-2">
+<div id="logbox" class="mockup-code text-xs h-128 overflow-y-auto">
+{% if not lines %}<div id="log-empty" class="px-4 py-2 text-base-content/60">Waiting for log lines…</div>{% endif %}
 <div id="loglines" class="px-4 py-2 flex flex-col justify-end min-h-full"
 hx-ext="sse" sse-connect="/logs/stream" sse-swap="log" hx-swap="beforeend">
 {% for line in lines %}<div class="log-line">{{ line }}</div>{% endfor %}
 </div>
 </div>
-<script>
-(function () {
-  var box = document.getElementById("logbox");
-  var follow = document.getElementById("log-follow");
-  var count = document.getElementById("log-count");
-  function update() {
-    var empty = document.getElementById("log-empty");
-    if (empty && box.querySelectorAll(".log-line").length > 0) { empty.remove(); }
-    var rows = box.querySelectorAll(".log-line");
-    if (rows.length > 2000) {
-      for (var i = 0; i < rows.length - 2000; i++) { rows[i].remove(); }
-      rows = box.querySelectorAll(".log-line");
-    }
-    count.textContent = rows.length + " lines";
-    if (follow.checked) { box.scrollTop = box.scrollHeight; }
-  }
-  document.getElementById("loglines").addEventListener("htmx:afterSwap", update);
-  follow.addEventListener("change", update);
-  update();
-})();
-</script>
+</div>
+</section>
+</div>
 {% endblock %}

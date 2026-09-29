@@ -1,7 +1,9 @@
 {% extends "base.html" %}
 {% block title %}{{ path }} — Carbide{% endblock %}
 {% block content %}
-<div class="breadcrumbs text-sm mb-2">
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="breadcrumbs text-sm">
 <ul>
 <li><a href="/podman">Podman</a></li>
 <li><a class="font-mono" href="/podman/containers/{{ cid }}">{{ cid|short }}</a></li>
@@ -9,10 +11,20 @@
 <li>File</li>
 </ul>
 </div>
-<h1 class="text-xl font-bold font-mono break-all mb-1">{{ path }}</h1>
-<p class="mb-3 text-sm"><span class="opacity-60">{{ size|filesizeformat }}</span>
-<a class="link ml-2" href="/podman/containers/{{ cid }}/file?path={{ path }}&download=1">download</a></p>
-{% if note %}<div class="alert mb-3" role="status"><span>{{ note }}</span></div>{% endif %}
-{% if truncated %}<div class="alert alert-warning mb-3" role="alert"><span>Truncated to first 100k chars; download for the full file.</span></div>{% endif %}
-{% if text %}<div class="mockup-code text-xs max-h-[70vh] overflow-y-auto"><pre class="evidence px-4">{{ text }}</pre></div>{% endif %}
+<h1 class="text-xl font-semibold font-mono break-all">{{ path }}</h1>
+<p class="text-sm flex flex-wrap items-center gap-2"><span class="text-base-content/60">{{ size|filesizeformat }}</span>
+<a class="btn btn-sm" href="/podman/containers/{{ cid }}/file?path={{ path }}&download=1">
+<svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
+Download</a></p>
+</div>
+{% if note %}<div class="alert alert-soft" role="status"><span>{{ note }}</span></div>{% endif %}
+{% if truncated %}<div class="alert alert-warning alert-soft" role="alert"><span>Truncated to first 100k chars; download for the full file.</span></div>{% endif %}
+{% if text %}
+<section class="card card-border bg-base-100" aria-label="File contents">
+<div class="card-body p-4 gap-2">
+<div class="mockup-code text-xs max-h-160 overflow-y-auto"><pre class="px-4 whitespace-pre-wrap break-all">{{ text }}</pre></div>
+</div>
+</section>
+{% endif %}
+</div>
 {% endblock %}

@@ -1,6 +1,8 @@
 # Vendored console assets (pinned; served from /static, no runtime CDN).
 # Refresh: download the URL, verify the sha256 below, update this file.
 # htmx + sse extension SRI verified against https://htmx.org/extensions/sse/.
+# NOTE: globals.css, console.js, and fonts/ are first-party console sources
+# (not vendored); they are listed here only for offline completeness.
 
 htmx.min.js
   url: https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js
@@ -16,10 +18,22 @@ alpine.min.js
   url: https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js
   sha256: 232519394c6c8fdba6f362b1d9da16106db513cdbf899011f00daab4051df31c
 
-daisyui.css (all themes incl. wireframe; selected via data-theme)
-  url: https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.css
-  sha256: fa8d769536a6db5e75c2f9f5312b6626a169b1ce7b2a039f3659be31da7e28af
+daisyui.css (components + light/dark themes)
+  url: https://cdn.jsdelivr.net/npm/daisyui@5.7.46/daisyui.css
+  sha256: ff5ac6a9196fb2d47b332bd15761d0b3439f812cde6fd0b7c0add8e5b4f7c1a6
 
-tailwind.min.js (Play CDN compiler, runs fully client-side once served)
-  url: https://cdn.tailwindcss.com/3.4.17
-  sha256: 176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15
+themes.css (all built-in themes incl. wireframe; selected via data-theme)
+  url: https://cdn.jsdelivr.net/npm/daisyui@5.7.46/themes.css
+  sha256: ab0c26a1d2d41c7f657b899a20a2f934ff7c0e8312466851181ab98181bced15
+
+tailwind.min.js (Tailwind v4 browser compiler, runs fully client-side)
+  url: https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3/dist/index.global.js
+  sha256: a60c785630a06196808cbe79e6f7bdb4abcc8f4421a47b56f29338fc84805e3b
+
+fonts/dm-sans-latin.woff2 (DM Sans 400-600 latin, OFL)
+  url: https://fonts.gstatic.com/s/dmsans/v17/rP2Hp2ywxg089UriCZOIHQ.woff2
+  sha256: ca72d2bcea8f4daa783dbdfa2d9b46068c3ce38168e05918fb867aa453b4f890
+
+fonts/dm-sans-latin-ext.woff2 (DM Sans 400-600 latin-ext, OFL)
+  url: https://fonts.gstatic.com/s/dmsans/v17/rP2Hp2ywxg089UriCZ2IHSeH.woff2
+  sha256: 5d18d31d23ada61ebee1d589b11d5da30db9e158f589d5e35221ba2b1a45de54

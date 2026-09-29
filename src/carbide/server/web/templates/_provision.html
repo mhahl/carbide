@@ -1,10 +1,10 @@
-<div {% if job.status == "running" %}hx-get="/fragments/provision/{{ pid }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+<div class="flex flex-col gap-2" {% if job.status == "running" %}hx-get="/fragments/provision/{{ pid }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
 {% if job.status == "running" %}
-<div class="alert mb-2" role="status"><span class="loading loading-spinner loading-sm"></span><span>Provisioning {{ job.sensor_id }}…</span></div>
+<div class="alert alert-soft" role="status"><span class="loading loading-spinner loading-sm"></span><span>Provisioning {{ job.sensor_id }}…</span></div>
 {% elif job.status == "done" %}
-<div class="alert alert-success mb-2" role="status"><span>Provisioned {{ job.sensor_id }}</span></div>
+<div class="alert alert-success alert-soft" role="status"><span>Provisioned {{ job.sensor_id }}</span></div>
 {% else %}
-<div class="alert alert-error mb-2" role="alert"><span>Provision {{ job.sensor_id }} failed</span></div>
+<div class="alert alert-error" role="alert"><span>Provision {{ job.sensor_id }} failed</span></div>
 {% endif %}
-{% if job.output %}<div class="mockup-code text-xs max-h-96 overflow-y-auto"><pre class="evidence px-4">{{ job.output }}</pre></div>{% endif %}
+{% if job.output %}<div class="mockup-code text-xs max-h-96 overflow-y-auto"><pre class="px-4 whitespace-pre-wrap break-all">{{ job.output }}</pre></div>{% endif %}
 </div>

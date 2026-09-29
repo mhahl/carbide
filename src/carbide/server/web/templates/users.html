@@ -1,18 +1,32 @@
 {% extends "base.html" %}
 {% block title %}Users — Carbide{% endblock %}
 {% block content %}
-<div class="mb-4">
-<h1 class="text-2xl font-bold tracking-tight">Console users</h1>
-<p class="text-sm opacity-70">Every console user is a full administrator.</p>
+<div class="flex flex-col gap-6">
+<div>
+<h1 class="text-2xl font-semibold tracking-tight">Console users</h1>
+<p class="text-sm text-base-content/60">Every console user is a full administrator.</p>
 </div>
-{% if error %}<div class="alert alert-error mb-3" role="alert"><span>{{ error }}</span></div>{% endif %}
-{% if notice %}<div class="alert alert-success mb-3" role="status"><span>{{ notice }}</span></div>{% endif %}
-<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra tabular">
-<thead><tr><th scope="col">Username</th><th scope="col">Created</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+{% if error %}<div class="alert alert-error" role="alert"><span>{{ error }}</span></div>{% endif %}
+{% if notice %}<div class="alert alert-success alert-soft" role="status"><span>{{ notice }}</span></div>{% endif %}
+<section class="card card-border bg-base-100" aria-label="Console users">
+<div class="card-body p-4 gap-2">
+<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular-nums">
+<thead><tr><th scope="col">User</th><th scope="col">Created</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
 <tbody>
 {% for u in rows %}
-<tr><td class="font-mono">{{ u.username }}</td><td>{{ u.created_at|ts }}</td>
-<td>{% if u.disabled %}<span class="badge badge-ghost badge-xs">disabled</span>{% else %}<span class="badge badge-success badge-xs">enabled</span>{% endif %}</td>
+<tr class="hover:bg-base-200">
+<td>
+<div class="flex items-center gap-2">
+<div class="avatar avatar-placeholder" aria-hidden="true">
+<div class="size-8 rounded-full bg-base-300 flex items-center justify-center">
+<span class="text-xs">{{ u.username[0]|upper }}</span>
+</div>
+</div>
+<p class="font-mono">{{ u.username }}</p>
+</div>
+</td>
+<td>{{ u.created_at|ts }}</td>
+<td>{% if u.disabled %}<span class="badge badge-ghost badge-xs">disabled</span>{% else %}<span class="badge badge-success badge-soft badge-xs">enabled</span>{% endif %}</td>
 <td class="whitespace-nowrap">
 {% if u.disabled %}
 <form method="post" action="/users/{{ u.id }}/enable" class="inline"><button class="btn btn-xs" type="submit">enable</button></form>
@@ -23,18 +37,36 @@
 </td></tr>
 {% endfor %}
 </tbody></table></div>
-<h2 class="font-bold mb-2">Create user</h2>
-<form method="post" action="/users/create" class="flex flex-wrap items-center gap-2">
-<input type="text" name="username" placeholder="username" aria-label="new username" class="input input-bordered input-sm" required>
-<input type="password" name="password" placeholder="password (min 8)" aria-label="new password" class="input input-bordered input-sm" minlength="8" required>
+</div>
+</section>
+<section class="card card-border bg-base-100 max-w-3xl" aria-label="Create user">
+<div class="card-body p-4 gap-2">
+<h2 class="font-medium">Create user</h2>
+<form method="post" action="/users/create" data-busy class="flex flex-wrap items-end gap-2">
+<fieldset class="fieldset">
+<label class="label" for="nu-username">Username</label>
+<input id="nu-username" type="text" name="username" placeholder="username" class="input validator input-sm" required>
+<p class="validator-hint">Username is required.</p>
+</fieldset>
+<fieldset class="fieldset">
+<label class="label" for="nu-password">Password</label>
+<input id="nu-password" type="password" name="password" placeholder="password (min 8)" class="input validator input-sm" minlength="8" required>
+<p class="validator-hint">Minimum 8 characters.</p>
+</fieldset>
 <button class="btn btn-sm btn-primary" type="submit">Create</button>
 </form>
+</div>
+</section>
+</div>
 <dialog id="pw-dialog" class="modal">
 <div class="modal-box">
-<h3 class="font-bold">Reset password for <span id="pw-user" class="font-mono"></span></h3>
-<form id="pw-form" method="post" action="">
-<label class="form-control mt-3"><span class="label"><span class="label-text">New password (min 8 chars)</span></span>
-<input type="password" name="password" class="input input-bordered" minlength="8" required autocomplete="new-password"></label>
+<h3 class="font-medium">Reset password for <span id="pw-user" class="font-mono"></span></h3>
+<form id="pw-form" method="post" action="" data-busy>
+<fieldset class="fieldset mt-2">
+<label class="label" for="pw-new">New password (min 8 chars)</label>
+<input id="pw-new" type="password" name="password" class="input validator w-full" minlength="8" required autocomplete="new-password">
+<p class="validator-hint">Minimum 8 characters.</p>
+</fieldset>
 <div class="modal-action">
 <button type="button" class="btn" onclick="document.getElementById('pw-dialog').close()">Cancel</button>
 <button class="btn btn-primary" type="submit">Reset</button>
