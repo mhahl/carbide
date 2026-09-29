@@ -98,16 +98,33 @@ class Forensics:
             return await self._report_unavailable(
                 session_id, sensor_id, attacker_ip, container_id, reason,
                 f"diff failed: {exc}", at)
-        rows, warnings = normalize_changes(raw)
+        try:
+            rows, warnings = normalize_changes(raw)
+        except TypeError as exc:
+            return await self._report_unavailable(
+                session_id, sensor_id, attacker_ip, container_id, reason,
+                f"unusable diff payload: {exc}", at)
         log.debug("diff for %s: %d paths", session_id, len(rows))
-        await self._db.add_diff_rows(session_id, rows)
+        try:
+            await self._db.add_diff_rows(session_id, rows)
+        except Exception as exc:
+            warnings.append(f"diff rows not stored: {exc}")
+            log.warning("forensics %s: diff rows not stored: %s",
+                        session_id, exc)
         changes = []
-        for path, kind in rows:
-            changes.append(await self._collect_path(
-                session_id, container_id, path, kind, warnings))
-        if self._full_export or final:
-            await self._collect_export(session_id, container_id, changes,
-                                       warnings)
+        try:
+            for path, kind in rows:
+                changes.append(await self._collect_path(
+                    session_id, container_id, path, kind, warnings))
+            if self._full_export or final:
+                await self._collect_export(session_id, container_id, changes,
+                                           warnings)
+        except Exception as exc:
+            # Never skip the report: partial capture plus a warning beats
+            # a blank "No report yet." on the session page.
+            warnings.append(f"capture interrupted: {exc}")
+            log.warning("forensics %s: capture interrupted: %s",
+                        session_id, exc)
         markdown, payload = self._render(
             session_id, sensor_id, attacker_ip, container_id, reason, at,
             changes, warnings)
@@ -173,11 +190,25 @@ class Forensics:
             log.debug("forensics %s: blob quota hit on %s",
                       session_id, path)
             return entry
-        await self._db.add_blob(ref_blob.sha256, ref_blob.path,
-                                ref_blob.size)
-        await self._db.add_session_file(
-            session_id, f"container:{path}", ref_blob.sha256,
-            ref_blob.size, datetime.datetime.now(datetime.timezone.utc))
+        except Exception as exc:
+            entry["note"] = f"content not stored: {exc}"
+            warnings.append(f"{path}: content not stored: {exc}")
+            log.warning("forensics %s: blob store failed on %s: %s",
+                        session_id, path, exc)
+            return entry
+        try:
+            await self._db.add_blob(ref_blob.sha256, ref_blob.path,
+                                    ref_blob.size)
+            await self._db.add_session_file(
+                session_id, f"container:{path}", ref_blob.sha256,
+                ref_blob.size,
+                datetime.datetime.now(datetime.timezone.utc))
+        except Exception as exc:
+            entry["note"] = f"file record not stored: {exc}"
+            warnings.append(f"{path}: file record not stored: {exc}")
+            log.warning("forensics %s: db write failed on %s: %s",
+                        session_id, path, exc)
+            return entry
         entry["sha256"] = ref_blob.sha256
         return entry
 

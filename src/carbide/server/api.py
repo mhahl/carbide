@@ -283,8 +283,12 @@ class ServerAPI:
                    sensor_id=sensor_id, attacker_ip=ip or "",
                    reason=reason or "")
         if container_id:
-            asyncio.create_task(self._collect(
+            # Retained: the loop keeps only weak refs to tasks, so an
+            # unreferenced forensics task could vanish mid-capture.
+            task = asyncio.create_task(self._collect(
                 sensor_id, ip, session_id, container_id, reason))
+            self._handlers.add(task)
+            task.add_done_callback(self._handlers.discard)
 
     async def _collect(self, sensor_id, ip, session_id, container_id,
                        reason):
@@ -300,7 +304,7 @@ class ServerAPI:
                        changes=summary["changes"],
                        warnings=len(summary["warnings"]))
         except Exception as exc:
-            log.warning("forensics for %s failed: %s", session_id, exc)
+            log.exception("forensics for %s failed: %s", session_id, exc)
 
     async def _r_auth(self, sensor_id, session_id, record):
         username = record.get("username", "")

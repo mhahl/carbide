@@ -171,6 +171,45 @@ class ForensicsTest(unittest.IsolatedAsyncioTestCase):
         md, _js = await self.db.get_report("s")
         self.assertIn("quota", md)
 
+    async def test_blob_failure_still_saves_partial_report(self):
+        # A blob-store error (disk full, missing mount) on one file must
+        # degrade to a warning, never to a missing report.
+        class BrokenBlobs:
+            def put_bytes(self, data):
+                raise OSError("disk full")
+        self.forensics._blobs = BrokenBlobs()
+        self.pod.write_file(self.cid, "/tmp/tool", b"evil")
+        summary = await self.forensics.collect(
+            sensor_id="s1", attacker_ip="1.2.3.4", session_id="s",
+            container_id=self.cid)
+        self.assertTrue(summary["warnings"])
+        md, _js = await self.db.get_report("s")
+        self.assertIn("/tmp/tool", md)
+        self.assertIn("disk full", md)
+
+    async def test_session_file_db_failure_still_saves_report(self):
+        class BrokenFiles(FakeDatabase):
+            async def add_session_file(self, *a, **k):
+                raise RuntimeError("db gone")
+        self.forensics._db = BrokenFiles()
+        self.pod.write_file(self.cid, "/tmp/tool", b"evil")
+        summary = await self.forensics.collect(
+            sensor_id="s1", attacker_ip="1.2.3.4", session_id="s",
+            container_id=self.cid)
+        self.assertTrue(summary["warnings"])
+        md, _js = await self.forensics._db.get_report("s")
+        self.assertIn("/tmp/tool", md)
+
+    async def test_unusable_diff_payload_reports_unavailable(self):
+        self.pod.diff = lambda cid: 42
+        summary = await self.forensics.collect(
+            sensor_id="s1", attacker_ip="1.2.3.4", session_id="s",
+            container_id=self.cid)
+        self.assertEqual(summary["changes"], 0)
+        self.assertTrue(summary["warnings"])
+        md, _js = await self.db.get_report("s")
+        self.assertIn("diff", md)
+
 
 if __name__ == "__main__":
     unittest.main()
