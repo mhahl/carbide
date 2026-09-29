@@ -120,6 +120,9 @@ Server `.env`:
 | `SSH_HOST` | `10.89.0.1` | address sensors use for container sshd: the gateway when co-located, the VPN IP of this host when remote |
 | `SENSOR_TOKEN` * | generated | the one token shared by all sensors |
 | `DB_PASSWORD` * | generated | Postgres password (also fed to the `db` service) |
+| `ADMIN_PASSWORD` * | generated | console `admin` login (rotation: Users page) |
+| `WEB_BIND` / `WEB_PORT` | `10.89.0.1` / `8080` | host bind for the web console (container serves 8080); flags: `--web-bind`, `--web-port` |
+| `MGMT_KEY_PATH` | — | host path to the sensor-mgmt SSH key (flag: `--mgmt-key`); staged 0600 for the server, enables remote sensor ops |
 | `BLOB_MOUNT` | named volume | whole `source:target[:opts]` fragment; set to a host path (e.g. an NFS mount, see below) to store blobs there instead |
 
 Sensor `.env`:
@@ -161,6 +164,66 @@ The store is content-addressed (`<2-hex>/<sha256>`), so existing blobs
 survive the move untouched — back the export up like any filesystem, and
 size it for your retention (quotas bound growth, eviction TTLs bound
 churn).
+
+## Web console
+
+The server ships an analyst + administrator console (no separate
+service): open `http://<WEB_BIND>:<WEB_PORT>` (setup prints the URL)
+and log in as `admin` with `ADMIN_PASSWORD` from `.env`. Every console
+user is a full admin: manage accounts on the Users page (create,
+disable, reset password); guard `ADMIN_PASSWORD` like the sensor token.
+Lost it? `podman compose exec server carbide-server -c
+/etc/carbide/config.toml --set-password admin` (password from
+`CARBIDE_ADMIN_PASSWORD` or a prompt).
+
+Analyst views (see the analyst guide for flows): dashboard, sessions
+(transcript, auth, files with download, Squid hits, diff, report),
+snapshots, side-by-side diff compare, auth attempts + container
+credentials, live Podman state (containers/images/networks, per-file
+inspection of running containers), and a live server-log tail. Session
+and container lists update over server-sent events; open transcripts
+re-poll every few seconds.
+
+Operator actions: stop/start/restart containers, snapshot-now, evict
+affinity (archives first), kill a live attacker session, and full
+sensor management (below). Every action logs who did what to which
+target in the server log — that is the audit trail (W4).
+
+Sensors page: register each sensor (SSH host/user, remote checkout
+dir, listen + server endpoints, password allow-list, accept
+probability). State combines the live server link with last-seen
+timestamps; sensors that exist in the DB but have no managed record are
+listed for one-click registration. Push rewrites the remote allow-list
+/ probability / endpoints and restarts the stack; restart re-renders
+and bounces the stack; provision copies the compose files, writes the
+remote `.env`, and runs the full remote setup with live output.
+
+Sensor SSH management needs a service account and key:
+
+```sh
+# one-time per fleet: keypair + account on each sensor host
+ssh-keygen -t ed25519 -f /root/.ssh/carbide-mgmt -N ""
+# on each sensor host: useradd carbide; allow podman + the checkout dir
+cd compose/server
+./setup.sh --mgmt-key /root/.ssh/carbide-mgmt
+```
+
+The key is staged 0600 for the server and never committed; without it
+the console shows SSH management as not configured and push/restart/
+provision refuse. Targets need podman, podman-compose, and envsubst
+installed; remote firewall stays out-of-band (non-root account). One
+sensor stack per host: the compose project name is fixed, so
+provisioning a second sensor onto an already-occupied host replaces
+the first (same as running two manual installs there). Sensors
+normally live on separate hosts; co-located trials need distinct
+`LISTEN_PORT`s and still share the one stack slot.
+
+Exposure: the console binds the container-only gateway by default
+(`WEB_BIND=10.89.0.1`), like the API. To reach it from elsewhere, bind
+a VPN address (`--web-bind`) plus `--allow-subnet` rules — setup opens
+both the API and console ports to those subnets and warns on unfenced
+binds. There is no TLS terminator in the stack; keep it on trusted
+networks or front it with your own reverse proxy.
 
 ## Operate
 
@@ -236,6 +299,8 @@ files (tokens live there — treat as secrets).
 | sessions start, no container | `compose logs server`; `podman ps`; socket mount | server stack must run rootful with `/run/podman/podman.sock` mounted (setup does this) |
 | `podman ping failed` at startup | `ls -la /run/podman/podman.sock` on the host | `systemctl enable --now podman.socket`, then restart the stack (current `setup.sh` does this itself — `git pull` if yours doesn't) |
 | ``crun: mount `/run/podman/podman.sock` ... Not a directory`` | `ls -la /run/podman/` shows a *directory* at `podman.sock` | an earlier `up` ran while the socket was down and compose shadowed it with a dir; `compose down`, `rmdir /run/podman/podman.sock`, `systemctl enable --now podman.socket`, re-run `./setup.sh` (a plain restart keeps failing — the stale mount type is baked into the container, it must be recreated; current files refuse to re-create the shadow — `git pull` if yours don't) |
+| console login fails / no admin | `compose logs server`; `ADMIN_PASSWORD` in `.env` | `./setup.sh` bootstraps `admin` from `ADMIN_PASSWORD` on every run (idempotent); to reset: `compose exec server carbide-server -c /etc/carbide/config.toml --set-password admin` |
+| console says SSH management not configured | Sensors page badge; `ls -la mgmt_key` | pass `./setup.sh --mgmt-key /path/to/key` (stages it 0600, enables `[sensor_mgmt]`); without it push/restart/provision refuse by design |
 | sensor can't reach container sshd | `SSH_HOST` on server | remote sensors: VPN IP of the server host; co-located: the carbide gateway (`10.89.0.1`) |
 | curl empty in container | `podman exec <c> env \| grep -i proxy`; squid logs | explicit proxy is stamped at container creation; `podman compose logs squid` |
 | no squid hits for a session | `compose logs squid`; `log_path` volume | squid-logs volume must be shared with `server` (compose does this) |

@@ -6,6 +6,7 @@
 #
 # Usage: ./setup.sh [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST]
 #          [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH]
+#          [--web-bind IP] [--web-port PORT] [--mgmt-key PATH]
 #          [--skip-firewall] [--skip-pull]
 set -euo pipefail
 
@@ -15,6 +16,7 @@ ALLOW_SUBNETS=()
 # Flag values live in F_* so they can't be confused with load_env values
 # below: only explicit flags append to .env, never re-runs.
 F_API_BIND=""; F_SSH_HOST=""; F_TAG=""; F_NFS_EXPORT=""; F_NFS_MOUNTPOINT=""
+F_WEB_BIND=""; F_WEB_PORT=""; F_MGMT_KEY=""
 SKIP_FIREWALL=0; SKIP_PULL=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -24,9 +26,12 @@ while [ $# -gt 0 ]; do
     --tag) F_TAG="$2"; shift 2 ;;
     --nfs-export) F_NFS_EXPORT="$2"; shift 2 ;;
     --nfs-mountpoint) F_NFS_MOUNTPOINT="$2"; shift 2 ;;
+    --web-bind) F_WEB_BIND="$2"; shift 2 ;;
+    --web-port) F_WEB_PORT="$2"; shift 2 ;;
+    --mgmt-key) F_MGMT_KEY="$2"; shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=1; shift ;;
     --skip-pull) SKIP_PULL=1; shift ;;
-    *) echo "usage: $0 [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST] [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH] [--skip-firewall] [--skip-pull]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST] [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH] [--web-bind IP] [--web-port PORT] [--mgmt-key PATH] [--skip-firewall] [--skip-pull]" >&2; exit 2 ;;
   esac
 done
 
@@ -93,14 +98,38 @@ load_env
 [ -n "$F_API_BIND" ] && echo "API_BIND=$F_API_BIND" >> .env
 [ -n "$F_SSH_HOST" ] && echo "SSH_HOST=$F_SSH_HOST" >> .env
 [ -n "$F_TAG" ] && echo "TAG=$F_TAG" >> .env
+[ -n "$F_WEB_BIND" ] && echo "WEB_BIND=$F_WEB_BIND" >> .env
+[ -n "$F_WEB_PORT" ] && echo "WEB_PORT=$F_WEB_PORT" >> .env
+if [ -n "$F_MGMT_KEY" ]; then
+  case "$F_MGMT_KEY" in *\ *|*"'"*|*\"*)
+    echo "error: --mgmt-key path must not contain spaces/quotes" >&2
+    exit 2 ;;
+  esac
+  echo "MGMT_KEY_PATH=$F_MGMT_KEY" >> .env
+fi
 if [ -z "${SENSOR_TOKEN:-}" ]; then
   echo "SENSOR_TOKEN=$(openssl rand -hex 24)" >> .env
 fi
 if [ -z "${DB_PASSWORD:-}" ]; then
   echo "DB_PASSWORD=$(openssl rand -hex 24)" >> .env
 fi
+if [ -z "${ADMIN_PASSWORD:-}" ]; then
+  echo "ADMIN_PASSWORD=$(openssl rand -hex 16)" >> .env
+fi
 load_env
-export SENSOR_TOKEN DB_PASSWORD TAG="${TAG:-latest}" SSH_HOST="${SSH_HOST:?set SSH_HOST in .env}"
+export SENSOR_TOKEN DB_PASSWORD ADMIN_PASSWORD TAG="${TAG:-latest}" SSH_HOST="${SSH_HOST:?set SSH_HOST in .env}"
+
+# 2a. sensor-mgmt SSH key: stage the configured key for the server
+# container (0600). Absent/empty key file means mgmt stays disabled.
+if [ -n "${MGMT_KEY_PATH:-}" ]; then
+  [ -f "$MGMT_KEY_PATH" ] || {
+    echo "error: MGMT_KEY_PATH=$MGMT_KEY_PATH not found" >&2; exit 1; }
+  cp -- "$MGMT_KEY_PATH" mgmt_key
+fi
+[ -f mgmt_key ] || : > mgmt_key
+chmod 600 mgmt_key
+if [ -s mgmt_key ]; then export MGMT_ENABLED=true
+else export MGMT_ENABLED=false; fi
 
 # 2b. NFS blob store (opt-in): pull NFS tooling, allow containers to use
 # NFS, mount the export, persist it in fstab, point BLOB_MOUNT at it.
@@ -161,16 +190,19 @@ $COMPOSE up -d
 # against a stale mount (crun "Not a directory"). Deps stay untouched.
 $COMPOSE up -d --force-recreate --no-deps server
 
-# 5. firewall: API port to sensor/VPN subnets only (never the internet)
+# 5. firewall: API + console ports to sensor/VPN subnets only (never
+# the internet)
 if [ "$SKIP_FIREWALL" -eq 0 ] && [ "${#ALLOW_SUBNETS[@]}" -gt 0 ]; then
   if ! command -v firewall-cmd >/dev/null; then
     echo "warning: firewall-cmd missing, skipping firewall rules" >&2
   else
     systemctl enable --now firewalld >/dev/null 2>&1 || true
-    for net in "${ALLOW_SUBNETS[@]}"; do
-      rule="rule family=\"ipv4\" source address=\"$net\" port port=\"${API_PORT:-8440}\" protocol=\"tcp\" accept"
-      firewall-cmd --query-rich-rule="$rule" >/dev/null || \
-        firewall-cmd --permanent --add-rich-rule="$rule"
+    for port in "${API_PORT:-8440}" "${WEB_PORT:-8080}"; do
+      for net in "${ALLOW_SUBNETS[@]}"; do
+        rule="rule family=\"ipv4\" source address=\"$net\" port port=\"$port\" protocol=\"tcp\" accept"
+        firewall-cmd --query-rich-rule="$rule" >/dev/null || \
+          firewall-cmd --permanent --add-rich-rule="$rule"
+      done
     done
     firewall-cmd --reload >/dev/null
   fi
@@ -182,8 +214,13 @@ case "${API_BIND:-127.0.0.1}" in
   *) [ "${#ALLOW_SUBNETS[@]}" -gt 0 ] || \
     echo "warning: API bound to $API_BIND with no --allow-subnet rules" >&2 ;;
 esac
+case "${WEB_BIND:-10.89.0.1}" in
+  127.*|::1|10.89.0.1) ;;
+  *) [ "${#ALLOW_SUBNETS[@]}" -gt 0 ] || \
+    echo "warning: console bound to $WEB_BIND with no --allow-subnet rules" >&2 ;;
+esac
 
-# 6. wait for the API, then report
+# 6. wait for the API, ensure the console admin, then report
 READY=0
 for _ in $(seq 1 60); do
   if (exec 3<>"/dev/tcp/${API_BIND:-127.0.0.1}/${API_PORT:-8440}") 2>/dev/null; then
@@ -198,6 +235,11 @@ if [ "$READY" -eq 0 ]; then
   $COMPOSE logs server | tail -20 >&2
   exit 1
 fi
+$COMPOSE exec -T -e "CARBIDE_ADMIN_PASSWORD=$ADMIN_PASSWORD" server \
+  carbide-server -c /etc/carbide/config.toml --ensure-admin admin || {
+  echo "error: console admin bootstrap failed" >&2; exit 1; }
 echo "server stack up. sensor token (copy to each sensor's .env):"
 echo "  SENSOR_TOKEN=$SENSOR_TOKEN"
+echo "console: http://${WEB_BIND:-10.89.0.1}:${WEB_PORT:-8080} (admin / ADMIN_PASSWORD in .env)"
+echo "  ADMIN_PASSWORD=$ADMIN_PASSWORD"
 echo "logs: $COMPOSE logs -f server | status: $COMPOSE ps"

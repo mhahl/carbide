@@ -35,6 +35,9 @@ services:
     command: ["carbide-server", "-c", "/etc/carbide/config.toml"]
     ports:
       - "${API_BIND:-127.0.0.1}:${API_PORT:-8440}:8440"
+      # Web console (W5): same pattern — host side configurable, the
+      # container always serves [web] port (8080).
+      - "${WEB_BIND:-10.89.0.1}:${WEB_PORT:-8080}:8080"
     volumes:
       # Host podman socket: siblings are created on the HOST, beside us.
       # Long syntax on purpose: create_host_path:false makes a missing
@@ -59,6 +62,17 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # Sensor-mgmt SSH key staged by setup.sh (touched empty when
+      # unconfigured; mgmt stays disabled until --mgmt-key is given).
+      - type: bind
+        source: ./mgmt_key
+        target: /etc/carbide/mgmt_key
+        read_only: true
+        bind:
+          create_host_path: false
+      # Sensor compose files, read-only: the console ships these to new
+      # sensor hosts when provisioning over SSH.
+      - ../sensor:/srv/carbide-sensor-files:ro,z
       # Blob store: named volume by default; point BLOB_MOUNT at a host path
       # (e.g. an NFS mount) to store blobs there instead. See .env.example.
       - ${BLOB_MOUNT:-carbide-blobs:/var/lib/carbide/blobs:z}

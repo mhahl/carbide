@@ -51,6 +51,8 @@ config.toml
 
 # Compose deploys: .env files hold secrets; commit the .example files only.
 /compose/*/.env
+# Sensor-mgmt SSH key staged by server setup.sh (0600, never commit).
+/compose/server/mgmt_key
 
 # Runtime data: sensor spool dirs, blob store content, db dumps
 spool/

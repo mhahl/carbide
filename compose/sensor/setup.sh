@@ -94,6 +94,9 @@ fi
 envsubst < config.toml.tmpl > config.toml
 chmod 600 config.toml
 $COMPOSE up -d
+# Recreate on every run so re-runs (and console restarts) actually
+# bounce the sensor and pick up the re-rendered config.
+$COMPOSE up -d --force-recreate --no-deps sensor
 
 if [ "$SKIP_FIREWALL" -eq 0 ]; then
   if [ "$(id -u)" -ne 0 ]; then

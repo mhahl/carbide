@@ -45,3 +45,17 @@ session_max_bytes = 104857600  # 100 MiB evidence cap per session
 [logging]
 level = "INFO"
 dir = "/var/log/carbide"
+
+[web]
+enabled = true
+bind_addr = "127.0.0.1"   # VPN address for remote analysts; 0.0.0.0 in containers
+port = 8080
+session_ttl_hours = 12
+
+[sensor_mgmt]
+enabled = false           # SSH remote management of sensor hosts
+key_path = ""             # service-account private key (0600)
+user = "carbide"          # default SSH user (per-sensor override in console)
+port = 22
+connect_timeout_s = 10.0
+files_dir = ""            # compose/sensor source for provisioning (autodetect)
