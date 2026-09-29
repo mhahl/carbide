@@ -45,14 +45,28 @@ fi
 [ -f .env ] || cp .env.example .env
 chmod 600 .env
 
-# Apply CLI overrides (append wins: load_env keeps the LAST value per key).
-# Only explicit flags append, so a pre-seeded .env is never clobbered.
-[ -n "$SERVER_HOST" ] && echo "SERVER_HOST=$SERVER_HOST" >> .env
-[ -n "$SERVER_PORT" ] && echo "SERVER_PORT=$SERVER_PORT" >> .env
-[ -n "$SENSOR_ID" ] && echo "SENSOR_ID=$SENSOR_ID" >> .env
-[ -n "$TOKEN" ] && echo "SENSOR_TOKEN=$TOKEN" >> .env
-[ -n "$LISTEN_PORT" ] && echo "LISTEN_PORT=$LISTEN_PORT" >> .env
-[ -n "$TAG" ] && echo "TAG=$TAG" >> .env
+set_env() { # set_env KEY VALUE: exactly one KEY= line in .env after.
+  key="$1"; value="$2"
+  if [ "$(grep -c -- "^${key}=" .env || true)" -eq 1 ] && \
+     grep -qF -- "${key}=${value}" .env; then
+    return 0  # already exact; leave comments/ordering untouched
+  fi
+  tmp="$(mktemp .env.tmp.XXXXXX)"
+  grep -v -- "^${key}=" .env > "$tmp" || true
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  cat "$tmp" > .env  # redirect keeps .env's 600 mode
+  rm -f "$tmp"
+}
+
+# Apply CLI overrides (set_env keeps exactly one line per key, so
+# re-runs never duplicate entries). Only explicit flags touch .env, so
+# a pre-seeded .env is never clobbered.
+[ -n "$SERVER_HOST" ] && set_env SERVER_HOST "$SERVER_HOST"
+[ -n "$SERVER_PORT" ] && set_env SERVER_PORT "$SERVER_PORT"
+[ -n "$SENSOR_ID" ] && set_env SENSOR_ID "$SENSOR_ID"
+[ -n "$TOKEN" ] && set_env SENSOR_TOKEN "$TOKEN"
+[ -n "$LISTEN_PORT" ] && set_env LISTEN_PORT "$LISTEN_PORT"
+[ -n "$TAG" ] && set_env TAG "$TAG"
 
 load_env() {  # literal KEY=value lines (no bash word-splitting).
   # Values containing spaces must be single-quoted for compose's dotenv

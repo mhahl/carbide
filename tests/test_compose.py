@@ -19,6 +19,10 @@ Confined services (no ``label=disable``) must also keep an SELinux
 relabel on host binds, or reads fail with permission denied.
 """
 import os
+import shlex
+import shutil
+import subprocess
+import tempfile
 import unittest
 
 try:
@@ -27,10 +31,14 @@ except ImportError:  # not a project dependency; compose files are static
     yaml = None
 
 requires_yaml = unittest.skipUnless(yaml is not None, "pyyaml not installed")
+requires_bash = unittest.skipUnless(shutil.which("bash") is not None,
+                                    "bash not installed")
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SERVER_COMPOSE = os.path.join(ROOT, "compose", "server", "compose.yml")
 SENSOR_COMPOSE = os.path.join(ROOT, "compose", "sensor", "compose.yml")
+SERVER_SETUP = os.path.join(ROOT, "compose", "server", "setup.sh")
+SENSOR_SETUP = os.path.join(ROOT, "compose", "sensor", "setup.sh")
 
 # Container paths backed by host FILES. A directory auto-created at any of
 # these wedges (re)starts with crun ENOTDIR once the real file appears.
@@ -121,3 +129,66 @@ class ComposeBindTest(unittest.TestCase):
                         if target in FILE_TARGETS:
                             self.assertIs(
                                 opts.get("create_host_path"), False)
+
+
+def _run_set_env(setup_path, seed, *calls):
+    """Run the real set_env() from setup_path against a seeded .env.
+
+    Each call is a (key, value) pair. Returns (text, mode) of .env.
+    """
+    tmp = tempfile.mkdtemp()
+    try:
+        env_path = os.path.join(tmp, ".env")
+        with open(env_path, "w") as fh:
+            fh.write(seed)
+        os.chmod(env_path, 0o600)
+        driver = ["cd " + shlex.quote(tmp),
+                  "sed -n '/^set_env() {/,/^}/p' "
+                  + shlex.quote(setup_path) + " > setenv.func",
+                  ". ./setenv.func"]
+        for key, value in calls:
+            driver.append("set_env %s %s"
+                          % (shlex.quote(key), shlex.quote(value)))
+        subprocess.run(["bash", "-c", "\n".join(driver)], check=True,
+                       capture_output=True, text=True)
+        with open(env_path) as fh:
+            return fh.read(), os.stat(env_path).st_mode & 0o777
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class SetupEnvIdempotenceTest(unittest.TestCase):
+    """setup.sh flag handling must not pile duplicate lines into .env.
+
+    Regression: every flag used ``echo "KEY=..." >> .env``, so each
+    re-run with the same flags appended another copy. set_env() keeps
+    exactly one line per key (and heals old duplicates on next run).
+    """
+
+    CASES = (
+        ("server", SERVER_SETUP, "API_BIND"),
+        ("sensor", SENSOR_SETUP, "SENSOR_ID"),
+    )
+
+    @requires_bash
+    def test_rerun_never_duplicates(self):
+        for name, setup, key in self.CASES:
+            with self.subTest(stack=name):
+                seed = "# seeded comment\n%s=old\nOTHER=keep\n" % key
+                first, mode = _run_set_env(setup, seed, (key, "new"))
+                self.assertEqual(first.count("%s=" % key), 1)
+                self.assertIn("%s=new\n" % key, first)
+                self.assertIn("# seeded comment\n", first)
+                self.assertIn("OTHER=keep\n", first)
+                self.assertEqual(mode, 0o600)
+                # A second identical run changes nothing at all.
+                again, _ = _run_set_env(setup, first, (key, "new"))
+                self.assertEqual(again, first)
+
+    @requires_bash
+    def test_heals_preexisting_duplicates(self):
+        for name, setup, key in self.CASES:
+            with self.subTest(stack=name):
+                seed = "%s=one\n%s=two\n" % (key, key)
+                body, _ = _run_set_env(setup, seed, (key, "three"))
+                self.assertEqual(body, "%s=three\n" % key)

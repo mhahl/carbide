@@ -14,7 +14,8 @@ cd "$(dirname "$0")"
 
 ALLOW_SUBNETS=()
 # Flag values live in F_* so they can't be confused with load_env values
-# below: only explicit flags append to .env, never re-runs.
+# below: only explicit flags touch .env (set_env rewrites one line per
+# key), so re-runs never duplicate entries.
 F_API_BIND=""; F_SSH_HOST=""; F_TAG=""; F_NFS_EXPORT=""; F_NFS_MOUNTPOINT=""
 F_WEB_BIND=""; F_WEB_PORT=""; F_MGMT_KEY=""
 SKIP_FIREWALL=0; SKIP_PULL=0
@@ -81,6 +82,19 @@ fi
 [ -f .env ] || cp .env.example .env
 chmod 600 .env
 
+set_env() { # set_env KEY VALUE: exactly one KEY= line in .env after.
+  key="$1"; value="$2"
+  if [ "$(grep -c -- "^${key}=" .env || true)" -eq 1 ] && \
+     grep -qF -- "${key}=${value}" .env; then
+    return 0  # already exact; leave comments/ordering untouched
+  fi
+  tmp="$(mktemp .env.tmp.XXXXXX)"
+  grep -v -- "^${key}=" .env > "$tmp" || true
+  printf '%s=%s\n' "$key" "$value" >> "$tmp"
+  cat "$tmp" > .env  # redirect keeps .env's 600 mode
+  rm -f "$tmp"
+}
+
 load_env() {  # literal KEY=value lines (last value per key wins).
   # Values containing spaces must be single-quoted for compose's dotenv
   # parser; one layer of surrounding single quotes is stripped here.
@@ -95,17 +109,17 @@ load_env() {  # literal KEY=value lines (last value per key wins).
   done < .env
 }
 load_env
-[ -n "$F_API_BIND" ] && echo "API_BIND=$F_API_BIND" >> .env
-[ -n "$F_SSH_HOST" ] && echo "SSH_HOST=$F_SSH_HOST" >> .env
-[ -n "$F_TAG" ] && echo "TAG=$F_TAG" >> .env
-[ -n "$F_WEB_BIND" ] && echo "WEB_BIND=$F_WEB_BIND" >> .env
-[ -n "$F_WEB_PORT" ] && echo "WEB_PORT=$F_WEB_PORT" >> .env
+[ -n "$F_API_BIND" ] && set_env API_BIND "$F_API_BIND"
+[ -n "$F_SSH_HOST" ] && set_env SSH_HOST "$F_SSH_HOST"
+[ -n "$F_TAG" ] && set_env TAG "$F_TAG"
+[ -n "$F_WEB_BIND" ] && set_env WEB_BIND "$F_WEB_BIND"
+[ -n "$F_WEB_PORT" ] && set_env WEB_PORT "$F_WEB_PORT"
 if [ -n "$F_MGMT_KEY" ]; then
   case "$F_MGMT_KEY" in *\ *|*"'"*|*\"*)
     echo "error: --mgmt-key path must not contain spaces/quotes" >&2
     exit 2 ;;
   esac
-  echo "MGMT_KEY_PATH=$F_MGMT_KEY" >> .env
+  set_env MGMT_KEY_PATH "$F_MGMT_KEY"
 fi
 if [ -z "${SENSOR_TOKEN:-}" ]; then
   echo "SENSOR_TOKEN=$(openssl rand -hex 24)" >> .env
@@ -133,8 +147,8 @@ else export MGMT_ENABLED=false; fi
 
 # 2b. NFS blob store (opt-in): pull NFS tooling, allow containers to use
 # NFS, mount the export, persist it in fstab, point BLOB_MOUNT at it.
-[ -n "$F_NFS_EXPORT" ] && echo "NFS_EXPORT=$F_NFS_EXPORT" >> .env
-[ -n "$F_NFS_MOUNTPOINT" ] && echo "NFS_MOUNTPOINT=$F_NFS_MOUNTPOINT" >> .env
+[ -n "$F_NFS_EXPORT" ] && set_env NFS_EXPORT "$F_NFS_EXPORT"
+[ -n "$F_NFS_MOUNTPOINT" ] && set_env NFS_MOUNTPOINT "$F_NFS_MOUNTPOINT"
 load_env
 if [ -n "${NFS_EXPORT:-}" ]; then
   case "$NFS_EXPORT" in
