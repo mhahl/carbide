@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Snapshots — Carbide{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-3">Snapshots</h1>
+<form method="get" action="/snapshots" class="flex gap-2 mb-3">
+<input type="text" name="sensor" value="{{ sensor }}" placeholder="sensor id" class="input input-bordered input-sm">
+<button class="btn btn-sm" type="submit">Filter</button>
+</form>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra">
+<thead><tr><th>Image</th><th>Sensor</th><th>IP</th><th>Container</th><th>Created</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr><td class="font-mono break-all">{{ r.image }}</td><td>{{ r.sensor_id }}</td><td class="font-mono">{{ r.ip }}</td>
+<td class="font-mono"><a class="link" href="/podman/containers/{{ r.container_id }}">{{ r.container_id|short }}</a></td>
+<td class="whitespace-nowrap">{{ r.created|ts }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endblock %}

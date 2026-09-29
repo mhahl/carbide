@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Dashboard — Carbide{% endblock %}
+{% block content %}
+<div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+<div class="stat bg-base-200"><div class="stat-title">Open sessions</div><div class="stat-value text-2xl">{{ open_sessions }}</div></div>
+<div class="stat bg-base-200"><div class="stat-title">Sessions 24h</div><div class="stat-value text-2xl">{{ sessions_24h }}</div></div>
+<div class="stat bg-base-200"><div class="stat-title">Affinities</div><div class="stat-value text-2xl">{{ affinities }}</div></div>
+<div class="stat bg-base-200"><div class="stat-title">Auth 24h</div><div class="stat-value text-2xl">{{ auth_24h }}</div></div>
+<div class="stat bg-base-200"><div class="stat-title">Containers up</div><div class="stat-value text-2xl">{% if podman_ok %}{{ containers_running }}{% else %}?{% endif %}</div></div>
+<div class="stat bg-base-200"><div class="stat-title">Sensors live</div><div class="stat-value text-2xl">{{ live|length }}</div></div>
+</div>
+{% if not podman_ok %}<div class="alert alert-warning mb-4"><span>Podman unreachable from server</span></div>{% endif %}
+<div class="grid lg:grid-cols-2 gap-4">
+<div>
+<h2 class="font-bold mb-2">Recent sessions</h2>
+<div id="recent-sessions" hx-get="/fragments/recent-sessions" hx-trigger="sse:session-started, sse:session-ended" hx-swap="innerHTML">
+{% include "_recent_sessions.html" %}
+</div>
+</div>
+<div>
+<h2 class="font-bold mb-2">Recent auth attempts</h2>
+<div class="overflow-x-auto"><table class="table table-xs table-zebra">
+<thead><tr><th>Time</th><th>Sensor</th><th>User</th><th>Result</th><th>Session</th></tr></thead>
+<tbody>
+{% for a in auth %}
+<tr><td class="whitespace-nowrap">{{ a.at|ts }}</td><td>{{ a.sensor_id }}</td><td class="font-mono">{{ a.username }}</td>
+<td>{% if a.accepted %}<span class="badge badge-success badge-xs">accept</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td>
+<td><a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:8] }}</a></td></tr>
+{% endfor %}
+</tbody></table></div>
+</div>
+</div>
+<div class="grid lg:grid-cols-2 gap-4 mt-4">
+<div>
+<h2 class="font-bold mb-2">Recent Squid hits</h2>
+<div class="overflow-x-auto"><table class="table table-xs table-zebra">
+<thead><tr><th>Time</th><th>Method</th><th>URL</th><th>Status</th></tr></thead>
+<tbody>
+{% for h in squid %}
+<tr><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url[:80] }}</td><td>{{ h.status }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+</div>
+<div>
+<h2 class="font-bold mb-2">Recent log lines <a class="link text-sm font-normal" href="/logs">live tail</a></h2>
+<div class="bg-base-200 p-2 text-xs font-mono max-h-64 overflow-y-auto">
+{% for line in logs %}<div class="log-line">{{ line }}</div>{% endfor %}
+</div>
+</div>
+</div>
+{% endblock %}

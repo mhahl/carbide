@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Live diff {{ cid|short }} — Carbide{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-1">Live diff: <span class="font-mono">{{ cid|short }}</span></h1>
+<p class="mb-3"><a class="link" href="/podman/containers/{{ cid }}">← container</a></p>
+{% if warnings %}
+<div class="alert alert-warning mb-3"><span>{{ warnings|join("; ") }}</span></div>
+{% endif %}
+<div class="overflow-x-auto"><table class="table table-xs table-zebra">
+<thead><tr><th></th><th>Path</th><th></th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr><td>{% if r.kind == "added" %}<span class="badge badge-success badge-xs">A</span>{% elif r.kind == "deleted" %}<span class="badge badge-error badge-xs">D</span>{% else %}<span class="badge badge-warning badge-xs">C</span>{% endif %}</td>
+<td class="font-mono">{{ r.path }}</td>
+<td>{% if r.kind != "deleted" %}<a class="link" href="/podman/containers/{{ cid }}/file?path={{ r.path }}">view</a>{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endblock %}

@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Container {{ cid|short }} — Carbide{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold font-mono mb-1">{{ cid }}</h1>
+<p class="mb-3">{% if status == "running" %}<span class="badge badge-success">running</span>{% else %}<span class="badge badge-ghost">{{ status }}</span>{% endif %}
+{% if ip %}<span class="font-mono text-sm ml-2">{{ ip }}</span>{% endif %}</p>
+{% if aff %}
+<p class="text-sm mb-3">Affinity: {{ aff.sensor_id }} / <span class="font-mono">{{ aff.attacker_ip }}</span> (port {{ aff.ssh_port }})</p>
+{% endif %}
+<div class="flex flex-wrap gap-2 mb-4">
+<button class="btn btn-sm" hx-post="/actions/containers/{{ cid }}/start" hx-target="#action-status" hx-swap="innerHTML">Start</button>
+<button class="btn btn-sm" hx-post="/actions/containers/{{ cid }}/stop" hx-target="#action-status" hx-swap="innerHTML">Stop</button>
+<button class="btn btn-sm" hx-post="/actions/containers/{{ cid }}/restart" hx-target="#action-status" hx-swap="innerHTML">Restart</button>
+<a class="btn btn-sm" href="/podman/containers/{{ cid }}/diff">Live diff</a>
+{% if aff %}
+<button class="btn btn-sm" hx-post="/actions/snapshots" hx-vals='{"container_id": "{{ cid }}", "sensor_id": "{{ aff.sensor_id }}", "ip": "{{ aff.attacker_ip }}"}' hx-target="#action-status" hx-swap="innerHTML">Snapshot now</button>
+<button class="btn btn-sm btn-error" hx-post="/actions/affinities/evict" hx-vals='{"sensor_id": "{{ aff.sensor_id }}", "ip": "{{ aff.attacker_ip }}"}' hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Archive and evict {{ aff.sensor_id }}/{{ aff.attacker_ip }}?">Evict affinity</button>
+{% endif %}
+</div>
+<h2 class="font-bold mb-2">Inspect</h2>
+<pre class="evidence text-xs bg-base-200 p-3 overflow-x-auto">{{ pretty }}</pre>
+{% endblock %}

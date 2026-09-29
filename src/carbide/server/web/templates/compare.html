@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Compare — Carbide{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-3">Compare session diffs</h1>
+<form method="get" action="/compare" class="flex flex-wrap gap-2 mb-3">
+<input type="text" name="a" value="{{ a_id }}" placeholder="session A id" class="input input-bordered input-sm w-64">
+<input type="text" name="b" value="{{ b_id }}" placeholder="session B id" class="input input-bordered input-sm w-64">
+<button class="btn btn-sm" type="submit">Compare</button>
+</form>
+{% if rows is not none %}
+<div class="grid md:grid-cols-2 gap-2 mb-3 text-sm">
+<div><span class="text-gray-500">A</span> <a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:12] }}</a> {{ a.sensor_id }} {{ a.attacker_ip }}</div>
+<div><span class="text-gray-500">B</span> <a class="link font-mono" href="/sessions/{{ b.session_id }}">{{ b.session_id[:12] }}</a> {{ b.sensor_id }} {{ b.attacker_ip }}</div>
+</div>
+<div class="overflow-x-auto"><table class="table table-xs table-zebra">
+<thead><tr><th>Path</th><th>A</th><th>B</th></tr></thead>
+<tbody>
+{% for r in rows %}
+<tr class="{% if r.a != r.b %}bg-warning/20{% endif %}"><td class="font-mono">{{ r.path }}</td>
+<td>{% if r.a %}<span class="badge badge-xs">{{ r.a }}</span>{% else %}—{% endif %}</td>
+<td>{% if r.b %}<span class="badge badge-xs">{{ r.b }}</span>{% else %}—{% endif %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+<div class="grid md:grid-cols-2 gap-4 mt-4">
+<div><h2 class="font-bold mb-1">A snapshots</h2>
+<ul class="text-xs font-mono">{% for img, at in a_snaps %}<li>{{ img }}</li>{% endfor %}</ul></div>
+<div><h2 class="font-bold mb-1">B snapshots</h2>
+<ul class="text-xs font-mono">{% for img, at in b_snaps %}<li>{{ img }}</li>{% endfor %}</ul></div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html data-theme="wireframe" lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Carbide{% endblock %}</title>
+<link rel="stylesheet" href="/static/daisyui.css">
+<script src="/static/tailwind.min.js"></script>
+<style>
+.log-line { white-space: pre-wrap; word-break: break-all; }
+pre.evidence { white-space: pre-wrap; word-break: break-all; }
+.t-in { border-left: 3px solid #666; }
+.t-out { border-left: 3px solid #bbb; }
+</style>
+</head>
+<body {% if user %}hx-ext="sse" sse-connect="/events/stream"{% endif %}>
+<div class="drawer lg:drawer-open">
+<input id="nav-drawer" type="checkbox" class="drawer-toggle">
+<div class="drawer-content flex flex-col min-h-screen">
+<div class="navbar bg-base-200 border-b border-base-300">
+<div class="flex-none lg:hidden">
+<label for="nav-drawer" class="btn btn-square btn-ghost" aria-label="menu">
+<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/></svg>
+</label>
+</div>
+<div class="flex-1 px-2 font-mono font-bold">CARBIDE CONSOLE</div>
+<div class="flex-none flex items-center gap-2">
+{% if user %}
+<span class="badge badge-outline">{{ user.username }}</span>
+<a class="btn btn-sm btn-ghost" href="/logout">logout</a>
+{% endif %}
+</div>
+</div>
+<main class="p-4 max-w-6xl w-full mx-auto">
+<div id="action-status"></div>
+{% block content %}{% endblock %}
+</main>
+</div>
+<div class="drawer-side">
+<label for="nav-drawer" class="drawer-overlay" aria-label="close"></label>
+<ul class="menu p-4 w-64 min-h-full bg-base-200 text-base">
+<li class="menu-title">Analyze</li>
+<li><a href="/">Dashboard</a></li>
+<li><a href="/sessions">Sessions</a></li>
+<li><a href="/snapshots">Snapshots</a></li>
+<li><a href="/compare">Compare</a></li>
+<li><a href="/auth">Auth &amp; creds</a></li>
+<li><a href="/podman">Podman</a></li>
+<li class="menu-title">Operate</li>
+<li><a href="/sensors">Sensors</a></li>
+<li><a href="/logs">Logs</a></li>
+<li><a href="/users">Users</a></li>
+</ul>
+</div>
+</div>
+<script src="/static/htmx.min.js"></script>
+<script src="/static/htmx-sse.min.js"></script>
+<script src="/static/alpine.min.js" defer></script>
+</body>
+</html>

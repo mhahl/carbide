@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Sensors — Carbide{% endblock %}
+{% block content %}
+<div class="flex items-center gap-3 mb-3">
+<h1 class="text-xl font-bold">Sensors</h1>
+<a class="btn btn-sm btn-primary" href="/sensors/new">+ Register sensor</a>
+{% if not mgmt.enabled %}<span class="badge badge-warning">SSH management not configured</span>{% endif %}
+</div>
+<div id="sensor-states" hx-get="/fragments/sensors" hx-trigger="every 30s" hx-swap="innerHTML">
+{% include "_sensors.html" with context %}
+</div>
+{% if unmanaged %}
+<h2 class="font-bold mt-6 mb-2">Seen but not managed</h2>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra">
+<thead><tr><th>Sensor</th><th>First seen</th><th>Last seen</th><th></th></tr></thead>
+<tbody>
+{% for s in unmanaged %}
+<tr><td class="font-mono">{{ s }}</td><td>{{ seen_full[s].first|ts }}</td><td>{{ seen_full[s].last|ts }}</td>
+<td><a class="link" href="/sensors/new?sensor_id={{ s }}">register</a></td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endif %}
+{% endblock %}

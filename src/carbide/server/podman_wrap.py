@@ -1,6 +1,7 @@
 """Synchronous Podman wrapper (always called from an executor) plus the
 narrow container-surface the rest of carbide-server programs against.
 """
+import datetime
 import io
 import logging
 import tarfile
@@ -142,6 +143,83 @@ class PodmanWrapper:
             except Exception:
                 continue
         return found
+
+    def list_all_containers(self) -> list:
+        """Console view: every container, normalized to plain dicts."""
+        out = []
+        containers = self._wrap(self._client.containers.list, all=True)
+        for container in containers:
+            try:
+                attrs = container.attrs or {}
+            except Exception:
+                attrs = {}
+            try:
+                # libpod list: State is a plain string, Image the full
+                # ref; dict-shaped State only on single inspect.
+                state = attrs.get("State", "")
+                if isinstance(state, dict):
+                    state = state.get("Status", "")
+                out.append({
+                    "id": container.id,
+                    "name": (container.name or "").lstrip("/"),
+                    "status": state or self._safe_status(container),
+                    "image": attrs.get("Image") or "",
+                    "created": attrs.get("Created") or "",
+                    "labels": dict(container.labels or {}),
+                })
+            except Exception:
+                continue
+        return out
+
+    @staticmethod
+    def _safe_status(container) -> str:
+        try:
+            return container.status or ""
+        except Exception:
+            return ""
+
+    def list_images(self) -> list:
+        """Console view: every image, normalized to plain dicts."""
+        out = []
+        images = self._wrap(self._client.images.list)
+        for image in images:
+            try:
+                attrs = image.attrs or {}
+                tags = list(image.tags or [])
+                created = attrs.get("Created", "")
+                if isinstance(created, (int, float)):
+                    created = datetime.datetime.fromtimestamp(
+                        created,
+                        datetime.timezone.utc).strftime("%Y-%m-%d %H:%M")
+                out.append({
+                    "id": (image.id or "")[:12],
+                    "tags": tags,
+                    "size": attrs.get("Size") or 0,
+                    "created": created,
+                })
+            except Exception:
+                continue
+        return out
+
+    def list_networks(self) -> list:
+        """Console view: every network, normalized to plain dicts."""
+        out = []
+        networks = self._wrap(self._client.networks.list)
+        for network in networks:
+            try:
+                attrs = network.attrs or {}
+                subnets = []
+                for entry in attrs.get("subnets", []) or []:
+                    if isinstance(entry, dict) and entry.get("subnet"):
+                        subnets.append(entry["subnet"])
+                out.append({
+                    "name": network.name,
+                    "driver": attrs.get("driver", ""),
+                    "subnets": subnets,
+                })
+            except Exception:
+                continue
+        return out
 
     # -- forensics --------------------------------------------------------
     def diff(self, cid: str) -> list:

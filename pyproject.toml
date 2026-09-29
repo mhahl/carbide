@@ -11,7 +11,9 @@ requires-python = ">=3.11"
 # bundles a second OpenSSL that corrupts the heap when loaded alongside the
 # system OpenSSL used by asyncssh/requests. Server hosts need libpq.
 dependencies = [
+    "aiohttp>=3.9",
     "asyncssh>=2.0",
+    "jinja2>=3.1",
     "podman>=5.0",
     "psycopg[c]>=3.1",
 ]
@@ -22,3 +24,6 @@ carbide-server = "carbide.server.__main__:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"carbide.server.web" = ["templates/*.html", "static/*"]

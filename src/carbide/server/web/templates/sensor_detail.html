@@ -1,0 +1,20 @@
+{% extends "sensor_form.html" %}
+{% block title %}{{ m.sensor_id }} — Carbide{% endblock %}
+{% block content %}
+{{ super() }}
+<div class="mt-6 max-w-3xl">
+<h2 class="font-bold mb-2">Remote actions
+{% if live %}<span class="badge badge-success badge-sm ml-1">linked</span>{% else %}<span class="badge badge-ghost badge-sm ml-1">link down</span>{% endif %}
+{% if not mgmt.enabled %}<span class="badge badge-warning badge-sm ml-1">SSH mgmt not configured</span>{% endif %}
+</h2>
+{% if notice %}<div class="alert alert-success mb-3"><span>{{ notice }}</span></div>{% endif %}
+<div class="flex flex-wrap gap-2 mb-3">
+<button class="btn btn-sm" hx-post="/actions/sensors/{{ m.sensor_id }}/push" hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Push saved config to {{ m.sensor_id }} and restart its stack?">Push config + restart</button>
+<button class="btn btn-sm" hx-post="/actions/sensors/{{ m.sensor_id }}/restart" hx-target="#action-status" hx-swap="innerHTML">Restart stack</button>
+<button class="btn btn-sm btn-warning" hx-post="/actions/sensors/{{ m.sensor_id }}/provision" hx-target="#provision-box" hx-swap="innerHTML" hx-confirm="Copy files and run full remote setup on {{ m.ssh_host }}?">Provision host</button>
+<form method="post" action="/sensors/{{ m.sensor_id }}/delete" class="inline" onsubmit="return confirm('Delete managed record {{ m.sensor_id }}? (Remote host untouched.)')"><button class="btn btn-sm btn-error" type="submit">Delete record</button></form>
+</div>
+<div id="provision-box"></div>
+<p class="text-sm mt-2"><a class="link" href="/sessions?sensor={{ m.sensor_id }}">Sessions for this sensor</a></p>
+</div>
+{% endblock %}

@@ -1,0 +1,25 @@
+# Vendored console assets (pinned; served from /static, no runtime CDN).
+# Refresh: download the URL, verify the sha256 below, update this file.
+# htmx + sse extension SRI verified against https://htmx.org/extensions/sse/.
+
+htmx.min.js
+  url: https://cdn.jsdelivr.net/npm/htmx.org@2.0.11/dist/htmx.min.js
+  sha256: d6fdc75f204e6bdefa99b69bf1e6d4ac69b8a364f77929f45c13476b4000f717
+  sri-sha384: 2OatzQy1H+Zd/IIrjr1TcuDGqLXeHhbooAyJY1KdQMKnr4LZ22k31GBLdYKHmVjg
+
+htmx-sse.min.js
+  url: https://cdn.jsdelivr.net/npm/htmx-ext-sse@2.2.4/dist/sse.min.js
+  sha256: 98a46496de0c3605fbffdce9167ba427bdd9553184f83f149c261891a92c0136
+  sri-sha384: A986SAtodyH8eg8x8irJnYUk7i9inVQqYigD6qZ9evobksGNIXfeFvDwLSHcp31N
+
+alpine.min.js
+  url: https://cdn.jsdelivr.net/npm/alpinejs@3.17.4/dist/cdn.min.js
+  sha256: 232519394c6c8fdba6f362b1d9da16106db513cdbf899011f00daab4051df31c
+
+daisyui.css (all themes incl. wireframe; selected via data-theme)
+  url: https://cdn.jsdelivr.net/npm/daisyui@4.12.24/dist/full.css
+  sha256: fa8d769536a6db5e75c2f9f5312b6626a169b1ce7b2a039f3659be31da7e28af
+
+tailwind.min.js (Play CDN compiler, runs fully client-side once served)
+  url: https://cdn.tailwindcss.com/3.4.17
+  sha256: 176e894661aa9cdc9a5cba6c720044cbbf7b8bd80d1c9a142a7c24b1b6c50d15

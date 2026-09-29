@@ -1,0 +1,10 @@
+<div {% if job.status == "running" %}hx-get="/fragments/provision/{{ pid }}" hx-trigger="every 2s" hx-swap="outerHTML"{% endif %}>
+{% if job.status == "running" %}
+<div class="alert mb-2"><span class="loading loading-spinner loading-sm"></span><span>Provisioning {{ job.sensor_id }}…</span></div>
+{% elif job.status == "done" %}
+<div class="alert alert-success mb-2"><span>Provisioned {{ job.sensor_id }}</span></div>
+{% else %}
+<div class="alert alert-error mb-2"><span>Provision {{ job.sensor_id }} failed</span></div>
+{% endif %}
+{% if job.output %}<pre class="evidence text-xs bg-base-200 p-3 overflow-x-auto max-h-96">{{ job.output }}</pre>{% endif %}
+</div>

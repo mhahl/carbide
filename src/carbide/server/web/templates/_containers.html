@@ -1,0 +1,36 @@
+{% if not podman_ok %}
+<div class="alert alert-error mb-4"><span>Podman unreachable: {{ podman_error }}</span></div>
+{% else %}
+<h2 class="font-bold mb-2">Containers ({{ containers|length }})</h2>
+<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra">
+<thead><tr><th>Name</th><th>ID</th><th>Image</th><th>Status</th><th></th></tr></thead>
+<tbody>
+{% for c in containers %}
+<tr><td class="font-mono">{{ c.name }}{% if c.labels and c.labels.get("carbide") %} <span class="badge badge-xs">carbide</span>{% endif %}</td>
+<td><a class="link font-mono" href="/podman/containers/{{ c.id }}">{{ c.id|short }}</a></td>
+<td class="font-mono text-xs">{{ c.image }}</td>
+<td>{% if c.status == "running" %}<span class="badge badge-success badge-xs">running</span>{% else %}<span class="badge badge-ghost badge-xs">{{ c.status }}</span>{% endif %}</td>
+<td class="whitespace-nowrap">
+<button class="btn btn-xs" hx-post="/actions/containers/{{ c.id }}/start" hx-target="#action-status" hx-swap="innerHTML">start</button>
+<button class="btn btn-xs" hx-post="/actions/containers/{{ c.id }}/stop" hx-target="#action-status" hx-swap="innerHTML">stop</button>
+<button class="btn btn-xs" hx-post="/actions/containers/{{ c.id }}/restart" hx-target="#action-status" hx-swap="innerHTML">restart</button>
+</td></tr>
+{% endfor %}
+</tbody></table></div>
+<h2 class="font-bold mb-2">Images ({{ images|length }})</h2>
+<div class="overflow-x-auto mb-6"><table class="table table-sm table-zebra">
+<thead><tr><th>ID</th><th>Tags</th><th>Size</th></tr></thead>
+<tbody>
+{% for i in images %}
+<tr><td class="font-mono">{{ i.id }}</td><td class="font-mono text-xs break-all">{{ i.tags|join(", ") }}</td><td>{{ i.size|filesizeformat }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+<h2 class="font-bold mb-2">Networks ({{ networks|length }})</h2>
+<div class="overflow-x-auto"><table class="table table-sm table-zebra">
+<thead><tr><th>Name</th><th>Driver</th><th>Subnets</th></tr></thead>
+<tbody>
+{% for n in networks %}
+<tr><td class="font-mono">{{ n.name }}</td><td>{{ n.driver }}</td><td class="font-mono">{{ n.subnets|join(", ") }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% endif %}

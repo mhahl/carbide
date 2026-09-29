@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Users — Carbide{% endblock %}
+{% block content %}
+<h1 class="text-xl font-bold mb-3">Console users</h1>
+{% if error %}<div class="alert alert-error mb-3"><span>{{ error }}</span></div>{% endif %}
+{% if notice %}<div class="alert alert-success mb-3"><span>{{ notice }}</span></div>{% endif %}
+<div class="overflow-x-auto mb-4"><table class="table table-sm table-zebra">
+<thead><tr><th>Username</th><th>Created</th><th>State</th><th></th></tr></thead>
+<tbody>
+{% for u in rows %}
+<tr><td class="font-mono">{{ u.username }}</td><td>{{ u.created_at|ts }}</td>
+<td>{% if u.disabled %}<span class="badge badge-ghost badge-xs">disabled</span>{% else %}<span class="badge badge-success badge-xs">enabled</span>{% endif %}</td>
+<td class="whitespace-nowrap">
+{% if u.disabled %}
+<form method="post" action="/users/{{ u.id }}/enable" class="inline"><button class="btn btn-xs" type="submit">enable</button></form>
+{% else %}
+<form method="post" action="/users/{{ u.id }}/disable" class="inline"><button class="btn btn-xs" type="submit">disable</button></form>
+{% endif %}
+<form method="post" action="/users/{{ u.id }}/password" class="inline" onsubmit="var p=prompt('New password (min 8 chars):'); if(!p||p.length<8){alert('min 8 chars');return false;} this.password.value=p; return true;">
+<input type="hidden" name="password" value="">
+<button class="btn btn-xs" type="submit">reset pw</button>
+</form>
+</td></tr>
+{% endfor %}
+</tbody></table></div>
+<h2 class="font-bold mb-2">Create user</h2>
+<form method="post" action="/users/create" class="flex gap-2">
+<input type="text" name="username" placeholder="username" class="input input-bordered input-sm" required>
+<input type="password" name="password" placeholder="password (min 8)" class="input input-bordered input-sm" required>
+<button class="btn btn-sm btn-primary" type="submit">Create</button>
+</form>
+{% endblock %}
