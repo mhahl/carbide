@@ -189,6 +189,43 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
             await self.db.count_auth_since(
                 now() - datetime.timedelta(hours=1)), 1)
 
+    async def test_reset_wipes_all_data(self):
+        await self.db.set_affinity("s1", "1.2.3.4", "c1", 22001, "pw",
+                                   "10.0.0.2")
+        await self.db.ensure_session("sess", "s1", "1.2.3.4")
+        await self.db.add_auth_attempt("sess", "s1", "root", "pw", True,
+                                       True, now())
+        await self.db.add_transcript("sess", "ch1", "in", "stdin", 0,
+                                     b"hello", now())
+        await self.db.add_blob("b" * 64, "/blobs/bb", 3)
+        await self.db.save_report("sess", "# md", "{}", now())
+        self.assertTrue(await self.db.claim_record("r1"))
+        uid = await self.db.create_web_user("op", "hash1")
+        await self.db.create_web_session(
+            "sha1", uid, now() + datetime.timedelta(hours=1))
+        await self.db.upsert_managed_sensor("s9", "10.0.0.9")
+
+        tables = await self.db.reset()
+
+        self.assertIn("sessions", tables)
+        self.assertIn("web_users", tables)
+        self.assertNotIn("schema_version", tables)
+        self.assertIsNone(await self.db.get_session("sess"))
+        self.assertIsNone(await self.db.get_affinity("s1", "1.2.3.4"))
+        self.assertEqual(await self.db.list_auth_attempts(), [])
+        self.assertEqual(await self.db.get_transcript("sess"), [])
+        self.assertIsNone(await self.db.get_blob("b" * 64))
+        self.assertIsNone(await self.db.get_report("sess"))
+        self.assertTrue(await self.db.claim_record("r1"))
+        self.assertIsNone(await self.db.get_web_user_by_name("op"))
+        self.assertIsNone(await self.db.get_managed_sensor("s9"))
+        # schema_version survives; sequences restart; db stays usable
+        versions = await self.db._exec(
+            "SELECT version FROM schema_version", fetch="all")
+        self.assertEqual({row[0] for row in versions}, {1, 2})
+        self.assertEqual(await self.db.create_web_user("op2", "h"), 1)
+        await self.db.migrate()
+
     async def test_close_is_idempotent_and_guards_queries(self):
         await self.db.close()
         await self.db.close()

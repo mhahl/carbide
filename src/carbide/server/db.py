@@ -194,6 +194,31 @@ class Database:
                 log.debug("db migrations current (%d applied)", len(have))
             await self._conn.commit()
 
+    async def reset(self):
+        """Delete ALL rows from every data table (testing only).
+
+        Schema and schema_version stay intact, so afterwards the database
+        looks like a fresh migrate(). Console users are wiped too —
+        recreate one with ``carbide-server --ensure-admin``. Returns the
+        truncated table names.
+        """
+        async with self._lock:
+            self._guard()
+            async with self._conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT tablename FROM pg_tables "
+                    "WHERE schemaname = 'public' "
+                    "AND tablename <> 'schema_version' "
+                    "ORDER BY tablename")
+                tables = [row[0] for row in await cur.fetchall()]
+                if tables:
+                    quoted = ", ".join(
+                        '"%s"' % t.replace('"', '""') for t in tables)
+                    await cur.execute(
+                        f"TRUNCATE {quoted} RESTART IDENTITY CASCADE")
+            await self._conn.commit()
+            return tables
+
     async def _exec(self, sql, params=(), fetch=None):
         async with self._lock:
             self._guard()

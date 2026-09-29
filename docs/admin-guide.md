@@ -283,6 +283,12 @@ images/build-push.sh <tag>    # from the repo
 podman pull quay.io/sigaint/carbide-honeypot:<tag>
 podman rm -f carbide-ref      # stale baseline; recreated at next start
 vi .env && ./setup.sh         # set TAG, restart
+
+# wipe the database to blank (TESTING ONLY: deletes all sessions,
+# evidence rows, and console users; the schema stays, so no re-migrate)
+podman compose exec server carbide-server -c /etc/carbide/config.toml --reset-db --yes
+CARBIDE_ADMIN_PASSWORD=... podman compose exec -e CARBIDE_ADMIN_PASSWORD server \
+  carbide-server -c /etc/carbide/config.toml --ensure-admin admin
 ```
 
 Back up: `podman compose exec db pg_dump -U carbide carbide`, the
@@ -306,6 +312,7 @@ files (tokens live there — treat as secrets).
 | no squid hits for a session | `compose logs squid`; `log_path` volume | squid-logs volume must be shared with `server` (compose does this) |
 | `over_quota` on sessions | quotas too small for workload | raise caps in the template or accept sampling |
 | server won't start, exit 2 | `compose logs server` names the key | fix `.env`/template (strict validation), re-run setup |
+| `cannot bind ...` at startup | `LISTEN_ADDR`/`LISTEN_PORT` in `.env`; `ss -tlnp` for the port owner | in-container bind stays `0.0.0.0:2222` — re-run `setup.sh`, never hand-edit `config.toml`; map the host socket via `.env`; port 22 needs the host sshd moved first and a rootful stack |
 | `db` never healthy | `compose logs db`; disk | check volume space; password changes need a fresh volume (Postgres only reads `POSTGRES_PASSWORD` on first init) |
 | link fails after interrupted compose ops | `nft list ruleset \| grep <port>` shows stale DNAT | `podman compose down`, `podman network rm carbide`, re-run `setup.sh` (it recreates the network) |
 | disk filling | `podman system df -v`; `podman images` | lower TTLs/retention/quotas; never blanket-`prune` (it deletes stopped affinities + snapshots) — remove specific containers after archiving |

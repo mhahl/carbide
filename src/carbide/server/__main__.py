@@ -8,6 +8,7 @@ import os
 import sys
 
 from ..common.config import DEFAULT_PATH, ConfigError, load
+from ..common.util import BindError
 from .app import ServerApp
 
 
@@ -38,6 +39,11 @@ def main(argv=None):
                              "or prompt), then exit")
     parser.add_argument("--set-password", metavar="USER", default=None,
                         help="reset console user USER's password, then exit")
+    parser.add_argument("--reset-db", action="store_true",
+                        help="delete ALL database rows (testing only), "
+                             "then exit (needs --yes)")
+    parser.add_argument("--yes", action="store_true",
+                        help="confirm --reset-db")
     args = parser.parse_args(argv)
     try:
         cfg = load(args.config)
@@ -51,12 +57,21 @@ def main(argv=None):
     if args.ensure_admin or args.set_password:
         return asyncio.run(_admin_account(
             cfg, args.ensure_admin, args.set_password))
+    if args.reset_db:
+        if not args.yes:
+            print("carbide-server: --reset-db needs --yes to confirm",
+                  file=sys.stderr)
+            return 2
+        return asyncio.run(_reset_db(cfg))
     setup_logging(cfg)
     app = ServerApp(cfg)
     try:
         asyncio.run(app.run())
     except KeyboardInterrupt:
         pass
+    except BindError as exc:
+        print(f"carbide-server: {exc}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -99,6 +114,23 @@ async def _admin_account(cfg, ensure_user, set_user):
         return 0
     finally:
         await db.close()
+
+
+async def _reset_db(cfg):
+    from .db import Database
+    db = Database(cfg.section("server")["db_dsn"])
+    try:
+        await db.connect()
+    except Exception as exc:
+        print(f"carbide-server: db connect failed: {exc}", file=sys.stderr)
+        return 1
+    try:
+        tables = await db.reset()
+    finally:
+        await db.close()
+    print(f"database reset: {len(tables)} tables truncated")
+    print("console users were wiped; recreate one with --ensure-admin")
+    return 0
 
 
 if __name__ == "__main__":
