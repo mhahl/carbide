@@ -6,7 +6,7 @@
 #
 # Usage: ./setup.sh [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST]
 #          [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH]
-#          [--web-bind IP] [--web-port PORT] [--mgmt-key PATH]
+#          [--web-bind IP] [--web-port PORT] [--mgmt-key PATH] [--vt-key KEY]
 #          [--skip-firewall] [--skip-pull]
 set -euo pipefail
 
@@ -17,7 +17,7 @@ ALLOW_SUBNETS=()
 # below: only explicit flags touch .env (set_env rewrites one line per
 # key), so re-runs never duplicate entries.
 F_API_BIND=""; F_SSH_HOST=""; F_TAG=""; F_NFS_EXPORT=""; F_NFS_MOUNTPOINT=""
-F_WEB_BIND=""; F_WEB_PORT=""; F_MGMT_KEY=""
+F_WEB_BIND=""; F_WEB_PORT=""; F_MGMT_KEY=""; F_VT_KEY=""
 SKIP_FIREWALL=0; SKIP_PULL=0
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,9 +30,10 @@ while [ $# -gt 0 ]; do
     --web-bind) F_WEB_BIND="$2"; shift 2 ;;
     --web-port) F_WEB_PORT="$2"; shift 2 ;;
     --mgmt-key) F_MGMT_KEY="$2"; shift 2 ;;
+    --vt-key) F_VT_KEY="$2"; shift 2 ;;
     --skip-firewall) SKIP_FIREWALL=1; shift ;;
     --skip-pull) SKIP_PULL=1; shift ;;
-    *) echo "usage: $0 [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST] [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH] [--web-bind IP] [--web-port PORT] [--mgmt-key PATH] [--skip-firewall] [--skip-pull]" >&2; exit 2 ;;
+    *) echo "usage: $0 [--allow-subnet CIDR]... [--api-bind IP] [--ssh-host HOST] [--tag TAG] [--nfs-export HOST:/PATH] [--nfs-mountpoint PATH] [--web-bind IP] [--web-port PORT] [--mgmt-key PATH] [--vt-key KEY] [--skip-firewall] [--skip-pull]" >&2; exit 2 ;;
   esac
 done
 
@@ -121,6 +122,13 @@ if [ -n "$F_MGMT_KEY" ]; then
   esac
   set_env MGMT_KEY_PATH "$F_MGMT_KEY"
 fi
+if [ -n "$F_VT_KEY" ]; then
+  case "$F_VT_KEY" in *\ *|*"'"*|*\"*)
+    echo "error: --vt-key must not contain spaces/quotes" >&2
+    exit 2 ;;
+  esac
+  set_env VT_API_KEY "$F_VT_KEY"
+fi
 if [ -z "${SENSOR_TOKEN:-}" ]; then
   echo "SENSOR_TOKEN=$(openssl rand -hex 24)" >> .env
 fi
@@ -144,6 +152,10 @@ fi
 chmod 600 mgmt_key
 if [ -s mgmt_key ]; then export MGMT_ENABLED=true
 else export MGMT_ENABLED=false; fi
+# VirusTotal verdicts stay off until a key exists (config rejects
+# enabled-without-key, so the template follows the key, not a flag).
+if [ -n "${VT_API_KEY:-}" ]; then export VT_ENABLED=true
+else export VT_ENABLED=false VT_API_KEY=""; fi
 
 # 2b. NFS blob store (opt-in): pull NFS tooling, allow containers to use
 # NFS, mount the export, persist it in fstab, point BLOB_MOUNT at it.

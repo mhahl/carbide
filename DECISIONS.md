@@ -255,3 +255,78 @@ Acceptance: "accept and build" (channel: this chat session, time:
 implementation request: build the accepted boundary now. There is no
 owning issue in this workspace, so this section is the coordination
 record.
+
+## Threat intel extension (Final)
+
+**Status: Final** — accepted by the user (see Acceptance below).
+Everything above remains Final as accepted. It extends the boundary with
+VirusTotal file verdicts for session evidence blobs (hash cache in
+Postgres, linked to files), automatic nmap profiling of attacking IPs,
+and a per-IP attacker view in the console.
+
+Settled constraints (user-stated in the feature request):
+- T0a — Files copied or downloaded through the proxy are uploaded to
+  VirusTotal, scanned, and results stored in the database.
+- T0b — Carbide links downloaded files to their scan results.
+- T0c — Carbide stores scan results to minimize VirusTotal load.
+- T0d — Carbide automatically scans the attacking IP with nmap and shows
+  it in an attacker view with information about that IP.
+
+Open questions (the interview tree — visibly unresolved):
+- Q1: Download bytes — SETTLED as T1.
+- Q2: VirusTotal tier — SETTLED as T2.
+- Q3: nmap default — SETTLED as T3.
+- Q4: nmap profile — SETTLED as T4.
+- Q5: Backfill — SETTLED as T5.
+- Q6: Scope contract and acceptance — SETTLED (accepted below).
+
+Decisions (written as they settle):
+- T1 — Session blobs only; no proxy-download bytes in this stage (user
+  chose option 3, 2026-09-30): VirusTotal-scan only files carbide already
+  holds as evidence (session uploads, forensic contents). No URL refetch,
+  no squid body capture — so proxy downloads get no verdicts for now, and
+  T0a/T0b apply to copied/session files only. Rationale: smallest correct
+  scope; download-byte capture returns as its own follow-up interview if
+  ever wanted.
+- T2 — Public VirusTotal key (user chose option 1, 2026-09-30): free
+  Community tier, 4 requests/minute and 500/day, non-commercial use only.
+  The worker paces itself to these limits with a persisted daily counter;
+  rate numbers stay config knobs so a premium key works later without code
+  changes.
+- T3 — nmap runs automatically for every new attacking IP (user chose
+  option 1, 2026-09-30): first sighting queues one scan, result cached 7
+  days; a config flag disables it. Rationale: T0d as stated, hands-free
+  intel; unsolicited-traffic concern contained by the connect-scan profile
+  (T4) and the disable flag.
+- T4 — nmap profile is connect scan plus version detection (user chose
+  option 3, 2026-09-30): `-sT -sV --top-ports 1000`, unprivileged, one
+  scan per IP per 7 days, serialized with a timeout. Rationale: richest
+  useful intel (what is actually listening, not just what is open);
+  accepted cost is slower, chattier scans. Profile stays a config knob.
+- T5 — New files only, plus a manual backfill command (user chose option
+  1, 2026-09-30): the worker scans evidence captured after deploy; a
+  `carbide-server --vt-backfill` flag drains pre-existing blobs on demand.
+  Rationale: steady-state quota stays predictable at 500/day; history
+  spend is the operator's explicit choice.
+
+Scope contract (accepted): deliverable is VT verdicts
+for session evidence blobs inside carbide-server — `server/vt.py` client
+(hash lookup, upload-if-unknown ≤32MB, analysis polling, 4/min + 500/day
+pacing with persisted counter, 429/5xx backoff) plus queue worker,
+`--vt-backfill` command, `server/ipintel.py` nmap worker (`-sT -sV`,
+one scan per IP per 7 days, disable flag), DB migration 3 (`vt_scans`,
+`ip_intel`), `[virustotal]`/`[ipintel]` config, nmap in the server
+image, `/attackers` + `/attackers/{ip}` console views with verdict
+badges, setup/compose/docs updates, and tests. Out of scope:
+proxy-download bytes (refetch/ICAP — follow-up with its own interview),
+premium-tier behavior beyond config knobs, SYN/raw scans, blocking
+traffic on verdicts, downloading samples from VT, and everything
+already out of scope above. Done means: (1) migration 3 applies cleanly;
+(2) a captured file shows its verdict on its session page; (3) a new
+attacker IP gets an nmap profile on its attacker page within the scan
+timeout; (4) full unit suite green; (5) admin + analyst docs updated.
+"Go" and similar words authorize only this boundary.
+
+Acceptance: "accept" (channel: this chat session, time:
+2026-09-30T00:22:09Z). There is no owning issue in this workspace, so
+this section is the coordination record.

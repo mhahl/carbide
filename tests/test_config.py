@@ -119,6 +119,40 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaises(ConfigError):
             load("/tmp/cfg-bad.toml")
 
+    def test_threat_intel_defaults(self):
+        with open("/tmp/cfg-server.toml", "w") as fh:
+            fh.write(SERVER_TOML)
+        cfg = load("/tmp/cfg-server.toml")
+        self.assertFalse(cfg.get("virustotal.enabled"))
+        self.assertEqual(cfg.get("virustotal.requests_per_minute"), 4)
+        self.assertEqual(cfg.get("virustotal.daily_cap"), 500)
+        self.assertTrue(cfg.get("ipintel.enabled"))
+        self.assertEqual(cfg.get("ipintel.nmap_args"),
+                         ["-sT", "-sV", "--top-ports", "1000"])
+        self.assertEqual(cfg.get("ipintel.cache_days"), 7)
+
+    def test_threat_intel_bad_values_rejected(self):
+        for section in ("[virustotal]\nenabled = true\n",
+                        "[virustotal]\nrequests_per_minute = 0\n",
+                        "[virustotal]\ndaily_cap = 0\n",
+                        "[virustotal]\nrescan_after_days = 0\n",
+                        "[ipintel]\ncache_days = 0\n",
+                        "[ipintel]\ntimeout_s = 0\n",
+                        "[ipintel]\nnmap_args = [\"-sT\", 42]\n",
+                        "[ipintel]\nnmap_args = [\"\"]\n"):
+            with open("/tmp/cfg-bad.toml", "w") as fh:
+                fh.write(SERVER_TOML + section)
+            with self.assertRaises(ConfigError):
+                load("/tmp/cfg-bad.toml")
+
+    def test_virustotal_enabled_with_key_ok(self):
+        with open("/tmp/cfg-server.toml", "w") as fh:
+            fh.write(SERVER_TOML + "[virustotal]\nenabled = true\n"
+                     "api_key = \"vt-key\"\n")
+        cfg = load("/tmp/cfg-server.toml")
+        self.assertTrue(cfg.get("virustotal.enabled"))
+        self.assertEqual(cfg.get("virustotal.api_key"), "vt-key")
+
     def test_empty_sensor_token_rejected(self):
         with open("/tmp/cfg-bad.toml", "w") as fh:
             fh.write('role = "server"\n[server]\nsensor_token = ""\n'

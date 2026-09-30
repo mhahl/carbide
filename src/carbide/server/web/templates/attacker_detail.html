@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Attacker {{ ip }} — Carbide{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-2">
+<div class="breadcrumbs text-sm">
+<ul>
+<li><a href="/attackers">Attackers</a></li>
+<li><span class="font-mono">{{ ip }}</span></li>
+</ul>
+</div>
+<div class="flex flex-wrap items-center gap-2">
+<h1 class="text-xl font-semibold font-mono break-all">{{ ip }}</h1>
+{% if intel and intel.rdns %}<span class="badge badge-ghost">{{ intel.rdns }}</span>{% endif %}
+{% if intel and intel.status == "ok" %}<span class="badge badge-success badge-soft">nmap scanned</span>{% elif intel and intel.status == "error" %}<span class="badge badge-ghost">nmap failed</span>{% else %}<span class="badge badge-ghost">nmap queued</span>{% endif %}
+</div>
+</div>
+<section class="card card-border bg-base-100" aria-label="nmap profile">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">nmap profile</h2>
+{% if intel %}<span class="badge badge-ghost badge-sm tabular-nums">{{ ports|length }} open</span>{% endif %}
+</div>
+{% if intel and intel.status == "ok" %}
+<p class="text-sm text-base-content/60">Scanned {{ intel.scanned_at|ts }}{% if intel.rdns %} · {{ intel.rdns }}{% endif %}.</p>
+{% if ports %}
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col" class="text-right">Port</th><th scope="col">Proto</th><th scope="col">Service</th><th scope="col">Version</th></tr></thead>
+<tbody>
+{% for p in ports %}
+<tr class="hover:bg-base-200"><td class="text-right tabular-nums">{{ p.port }}</td><td>{{ p.proto }}</td><td class="font-mono">{{ p.service or "—" }}</td><td class="font-mono">{{ p.version or "—" }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="text-sm text-base-content/60">No open ports in the scanned range.</p>
+{% endif %}
+{% elif intel and intel.status == "error" %}
+<p class="text-sm text-base-content/60">Scan failed: {{ intel.error or "unknown error" }}.</p>
+{% else %}
+<p class="text-sm text-base-content/60">Not scanned yet — the next intel pass picks it up automatically.</p>
+{% endif %}
+</div>
+</section>
+
+<section class="card card-border bg-base-100" aria-label="Attacker files">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">Files</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ files|length }}</span>
+</div>
+{% if files %}
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Name</th><th scope="col">Session</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th></tr></thead>
+<tbody>
+{% for f in files %}
+<tr class="hover:bg-base-200"><td class="font-mono break-all">{{ f.name }}</td>
+<td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ f.session_id }}">{{ f.session_id[:12] }}</a></td>
+<td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
+<td>{% include "_verdict.html" %}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="text-sm text-base-content/60">No files captured from this IP.</p>
+{% endif %}
+</div>
+</section>
+
+<section class="card card-border bg-base-100" aria-label="Attacker sessions">
+<div class="card-body p-4 gap-2">
+<div class="flex items-center gap-2">
+<h2 class="font-medium">Sessions</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ sessions|length }}</span>
+</div>
+{% if sessions %}
+<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Started</th><th scope="col">Ended</th></tr></thead>
+<tbody>
+{% for s in sessions %}
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
+<td>{{ s.sensor_id }}</td><td class="font-mono">{{ s.username }}</td>
+<td class="whitespace-nowrap">{{ s.started_at|ts }}</td><td class="whitespace-nowrap">{{ s.ended_at|ts }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% else %}
+<p class="text-sm text-base-content/60">No sessions from this IP.</p>
+{% endif %}
+</div>
+</section>
+</div>
+{% endblock %}

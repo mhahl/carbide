@@ -44,6 +44,9 @@ def main(argv=None):
                              "then exit (needs --yes)")
     parser.add_argument("--yes", action="store_true",
                         help="confirm --reset-db")
+    parser.add_argument("--vt-backfill", action="store_true",
+                        help="scan all unscanned blobs via VirusTotal now "
+                             "(spends daily quota), then exit")
     args = parser.parse_args(argv)
     try:
         cfg = load(args.config)
@@ -63,6 +66,8 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
         return asyncio.run(_reset_db(cfg))
+    if args.vt_backfill:
+        return asyncio.run(_vt_backfill(cfg))
     setup_logging(cfg)
     app = ServerApp(cfg)
     try:
@@ -130,6 +135,38 @@ async def _reset_db(cfg):
         await db.close()
     print(f"database reset: {len(tables)} tables truncated")
     print("console users were wiped; recreate one with --ensure-admin")
+    return 0
+
+
+async def _vt_backfill(cfg):
+    from ..common.blobstore import BlobStore
+    from .db import Database
+    from .vt import VTQueue, build_client
+    if not cfg.get("virustotal.enabled", False):
+        print("carbide-server: virustotal not enabled (set a key first)",
+              file=sys.stderr)
+        return 2
+    scfg = cfg.section("server")
+    db = Database(scfg["db_dsn"])
+    try:
+        await db.connect()
+    except Exception as exc:
+        print(f"carbide-server: db connect failed: {exc}", file=sys.stderr)
+        return 1
+    try:
+        blobs = BlobStore(scfg["blob_dir"],
+                          cfg.get("quotas.blob_max_bytes", 10 * 1024**3))
+        queue = VTQueue(db, blobs, build_client(cfg, db), cfg, batch=50)
+        total = 0
+        for _ in range(12):
+            done = await queue.run_once()
+            total += done
+            if done == 0:
+                break
+            await asyncio.sleep(60)
+    finally:
+        await db.close()
+    print(f"backfill: {total} files processed")
     return 0
 
 

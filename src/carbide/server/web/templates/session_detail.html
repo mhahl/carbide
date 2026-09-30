@@ -71,10 +71,11 @@
 </div>
 {% if files %}
 <div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Name</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
+<thead><tr><th scope="col">Name</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
 <tbody>
 {% for f in files %}
 <tr class="hover:bg-base-200"><td class="font-mono break-all">{{ f.name }}</td><td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
+<td>{% include "_verdict.html" %}</td>
 <td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>

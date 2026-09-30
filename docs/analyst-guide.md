@@ -6,8 +6,10 @@ Every investigation starts from one `sessions` row.
 
 The web console (URL + `admin` login from server `setup.sh`) covers the
 flows below without SQL: **Sessions** reads a session cold end to end
-(report, diff, files with one-click download, auth attempts with
-passwords, live-tailing transcript, Squid hits); **Compare** diffs two
+(report, diff, files with one-click download and VirusTotal verdicts,
+auth attempts with passwords, live-tailing transcript, Squid hits);
+**Attackers** profiles each source IP (nmap open ports/services, all
+its sessions and files with verdicts); **Compare** diffs two
 sessions' container changes side by side with their snapshots;
 **Snapshots** lists committed images; **Auth & creds** shows every
 password guess plus the honeypot SSH credentials; **Podman** inspects

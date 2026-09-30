@@ -222,9 +222,84 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         # schema_version survives; sequences restart; db stays usable
         versions = await self.db._exec(
             "SELECT version FROM schema_version", fetch="all")
-        self.assertEqual({row[0] for row in versions}, {1, 2})
+        self.assertEqual({row[0] for row in versions}, {1, 2, 3})
         self.assertEqual(await self.db.create_web_user("op2", "h"), 1)
         await self.db.migrate()
+
+    async def test_vt_scans_crud_and_candidates(self):
+        self.assertIsNone(await self.db.get_vt_scan("c" * 64))
+        await self.db.add_blob("c" * 64, "/blobs/cc", 3)
+        await self.db.add_blob("d" * 64, "/blobs/dd", 4)
+        cutoff = now() - datetime.timedelta(days=30)
+        cands = await self.db.vt_candidates(10, cutoff)
+        self.assertEqual({sha for sha, _size in cands},
+                         {"c" * 64, "d" * 64})
+        await self.db.save_vt_scan("c" * 64, "malicious", malicious=5,
+                                   harmless=70, permalink="https://vt/x",
+                                   report_json='{"a":1}')
+        scan = await self.db.get_vt_scan("c" * 64)
+        self.assertEqual(scan["status"], "malicious")
+        self.assertEqual(scan["malicious"], 5)
+        self.assertEqual(scan["permalink"], "https://vt/x")
+        cands = await self.db.vt_candidates(10, cutoff)
+        self.assertEqual([sha for sha, _size in cands], ["d" * 64])
+        # a fresh scan is not due; an old cutoff makes it due again
+        fresh = await self.db.vt_candidates(
+            10, now() + datetime.timedelta(days=1))
+        self.assertEqual({sha for sha, _size in fresh},
+                         {"c" * 64, "d" * 64})
+        # pending analyses stay due regardless of cutoff
+        await self.db.save_vt_scan("d" * 64, "pending",
+                                   analysis_id="an-1")
+        due = await self.db.vt_candidates(10, cutoff)
+        self.assertEqual([sha for sha, _size in due], ["d" * 64])
+        self.assertEqual(
+            (await self.db.get_vt_scan("d" * 64))["analysis_id"], "an-1")
+
+    async def test_vt_quota_claim(self):
+        day = now().date()
+        self.assertEqual(await self.db.vt_quota_used(day), 0)
+        self.assertTrue(await self.db.claim_vt_quota(day, 2))
+        self.assertTrue(await self.db.claim_vt_quota(day, 2))
+        self.assertFalse(await self.db.claim_vt_quota(day, 2))
+        self.assertEqual(await self.db.vt_quota_used(day), 2)
+        self.assertTrue(await self.db.claim_vt_quota(
+            day + datetime.timedelta(days=1), 2))
+
+    async def test_ip_intel_crud_and_due_scans(self):
+        await self.db.ensure_session("s1", "s1", "1.2.3.4")
+        await self.db.ensure_session("s2", "s1", "5.6.7.8")
+        self.assertIsNone(await self.db.get_ip_intel("1.2.3.4"))
+        cutoff = now() - datetime.timedelta(days=7)
+        self.assertEqual(set(await self.db.ips_needing_scan(10, cutoff)),
+                         {"1.2.3.4", "5.6.7.8"})
+        await self.db.save_ip_intel("1.2.3.4", rdns="x.example",
+                                    open_ports='[{"port": 22}]')
+        intel = await self.db.get_ip_intel("1.2.3.4")
+        self.assertEqual(intel["status"], "ok")
+        self.assertEqual(intel["rdns"], "x.example")
+        self.assertEqual(await self.db.ips_needing_scan(10, cutoff),
+                         ["5.6.7.8"])
+
+    async def test_attacker_overview_queries(self):
+        await self.db.ensure_session("a", "s1", "9.9.9.9")
+        await self.db.set_session_started("a", "root", now(), "9.9.9.9")
+        await self.db.ensure_session("b", "s1", "9.9.9.9")
+        await self.db.add_blob("e" * 64, "/blobs/ee", 3)
+        await self.db.add_session_file("a", "up/x", "e" * 64, 3, now())
+        await self.db.save_vt_scan("e" * 64, "malicious", malicious=9)
+        await self.db.save_ip_intel("9.9.9.9")
+        rows = await self.db.list_attackers()
+        self.assertEqual(len(rows), 1)
+        ip, sessions, _seen, files, malicious, intel = rows[0]
+        self.assertEqual(
+            (ip, sessions, files, malicious, intel),
+            ("9.9.9.9", 2, 1, 1, "ok"))
+        frows = await self.db.list_files_by_ip("9.9.9.9")
+        self.assertEqual(len(frows), 1)
+        self.assertEqual(frows[0][2:], ("up/x", "e" * 64, 3, frows[0][5],
+                                        "malicious", 9, 0))
+        self.assertEqual(await self.db.list_files_by_ip("8.8.8.8"), [])
 
     async def test_close_is_idempotent_and_guards_queries(self):
         await self.db.close()

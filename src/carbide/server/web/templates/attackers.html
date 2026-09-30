@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Attackers — Carbide{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-6">
+<div>
+<h1 class="text-2xl font-semibold tracking-tight">Attackers</h1>
+<p class="text-sm text-base-content/60">Source IPs seen across all sensors, with file verdicts and nmap intel.</p>
+</div>
+<section class="card card-border bg-base-100" aria-label="Attackers">
+<div class="card-body p-4 gap-2">
+<div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">IP</th><th scope="col" class="text-right">Sessions</th><th scope="col">Last seen</th><th scope="col" class="text-right">Files</th><th scope="col" class="text-right">Malicious</th><th scope="col">nmap</th></tr></thead>
+<tbody>
+{% for a in rows %}
+<tr class="hover:bg-base-200"><td class="font-mono"><a class="link" href="/attackers/{{ a.ip }}">{{ a.ip }}</a></td>
+<td class="text-right tabular-nums">{{ a.sessions }}</td><td class="whitespace-nowrap">{{ a.last_seen|ts }}</td>
+<td class="text-right tabular-nums">{{ a.files }}</td>
+<td class="text-right tabular-nums">{% if a.malicious %}<span class="badge badge-error badge-soft badge-xs">{{ a.malicious }}</span>{% else %}0{% endif %}</td>
+<td>{% if a.intel == "ok" %}<span class="badge badge-success badge-soft badge-xs">scanned</span>{% elif a.intel == "error" %}<span class="badge badge-ghost badge-xs">failed</span>{% else %}<span class="badge badge-ghost badge-xs">queued</span>{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="100%">
+<div class="flex flex-col items-center gap-2 py-6 text-center">
+<span class="size-8 rounded-full bg-base-200 flex items-center justify-center" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2.5"/></svg>
+</span>
+<p class="text-sm text-base-content/60">No attackers seen yet.</p>
+</div>
+</td></tr>
+{% endfor %}
+</tbody></table></div>
+<div class="flex items-center gap-2">
+<div class="join">
+{% if page > 1 %}<a class="join-item btn" href="/attackers?{% if base_query %}{{ base_query }}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
+{% if has_more %}<a class="join-item btn" href="/attackers?{% if base_query %}{{ base_query }}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+<p class="text-sm text-base-content/60">Page {{ page }}</p>
+</div>
+</div>
+</section>
+</div>
+{% endblock %}

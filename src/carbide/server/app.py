@@ -8,9 +8,11 @@ from .bus import EventBus, LogRingHandler
 from .db import Database
 from .eviction import EvictionJob
 from .forensics import Forensics
+from .ipintel import IPIntel
 from .podman_wrap import PodmanWrapper
 from .pool import Pool
 from .squid import SquidTailer
+from .vt import VTQueue, build_client
 from .web.webapp import WebConsole, create_app
 
 log = logging.getLogger("carbide.server")
@@ -40,6 +42,15 @@ class ServerApp:
                                      bus=self.bus)
         else:
             self.squid = None
+        if cfg.get("virustotal.enabled", False):
+            self.vt = VTQueue(self.db, self.blobs,
+                              build_client(cfg, self.db), cfg)
+        else:
+            self.vt = None
+        if cfg.get("ipintel.enabled", True):
+            self.ipintel = IPIntel(self.db, cfg)
+        else:
+            self.ipintel = None
         if cfg.get("web.enabled", True):
             self.web = WebConsole(create_app({
                 "cfg": cfg, "db": self.db, "pool": self.pool,
@@ -66,6 +77,16 @@ class ServerApp:
                                              name="squid"))
         else:
             log.info("squid ingest disabled")
+        if self.vt is not None:
+            tasks.append(asyncio.create_task(self.vt.run_forever(),
+                                             name="vt"))
+        else:
+            log.info("vt queue disabled")
+        if self.ipintel is not None:
+            tasks.append(asyncio.create_task(self.ipintel.run_forever(),
+                                             name="ipintel"))
+        else:
+            log.info("ipintel disabled")
         if self.web is not None:
             tasks.append(asyncio.create_task(self.web.run(), name="web"))
         else:

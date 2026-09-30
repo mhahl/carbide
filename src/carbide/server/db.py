@@ -140,6 +140,32 @@ MIGRATIONS = [
         notes TEXT DEFAULT '',
         updated_at TIMESTAMPTZ DEFAULT now());
     """),
+    (3, """
+    CREATE TABLE IF NOT EXISTS vt_scans (
+        sha256 TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        malicious INT DEFAULT 0,
+        suspicious INT DEFAULT 0,
+        harmless INT DEFAULT 0,
+        undetected INT DEFAULT 0,
+        permalink TEXT DEFAULT '',
+        report_json TEXT DEFAULT '',
+        analysis_id TEXT DEFAULT '',
+        error TEXT DEFAULT '',
+        scanned_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now());
+    CREATE TABLE IF NOT EXISTS vt_quota (
+        day DATE PRIMARY KEY,
+        used INT DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS ip_intel (
+        attacker_ip TEXT PRIMARY KEY,
+        rdns TEXT DEFAULT '',
+        status TEXT NOT NULL,
+        open_ports TEXT DEFAULT '[]',
+        raw_xml TEXT DEFAULT '',
+        error TEXT DEFAULT '',
+        scanned_at TIMESTAMPTZ DEFAULT now());
+    """),
 ]
 
 
@@ -725,3 +751,145 @@ class Database:
         await self._exec(
             "DELETE FROM managed_sensors WHERE sensor_id = %s",
             (sensor_id,))
+
+    # -- virustotal -----------------------------------------------------
+    _VT_COLS = ("sha256", "status", "malicious", "suspicious", "harmless",
+                "undetected", "permalink", "report_json", "analysis_id",
+                "error", "scanned_at", "updated_at")
+
+    @classmethod
+    def _vt_row(cls, row):
+        return dict(zip(cls._VT_COLS, row))
+
+    async def get_vt_scan(self, sha: str):
+        row = await self._exec(
+            "SELECT sha256, status, malicious, suspicious, harmless, "
+            "undetected, permalink, report_json, analysis_id, error, "
+            "scanned_at, updated_at FROM vt_scans WHERE sha256 = %s",
+            (sha,), fetch="one")
+        return self._vt_row(row) if row else None
+
+    async def get_vt_scans(self, shas) -> dict:
+        """Batch verdicts keyed by sha (console file lists)."""
+        shas = list(dict.fromkeys(s for s in shas if s))
+        if not shas:
+            return {}
+        rows = await self._exec(
+            "SELECT sha256, status, malicious, suspicious, harmless, "
+            "undetected, permalink, report_json, analysis_id, error, "
+            "scanned_at, updated_at FROM vt_scans WHERE sha256 = ANY(%s)",
+            (shas,), fetch="all")
+        return {row[0]: self._vt_row(row) for row in rows}
+
+    async def save_vt_scan(self, sha: str, status: str, malicious: int = 0,
+                           suspicious: int = 0, harmless: int = 0,
+                           undetected: int = 0, permalink: str = "",
+                           report_json: str = "", analysis_id: str = "",
+                           error: str = ""):
+        await self._exec(
+            "INSERT INTO vt_scans (sha256, status, malicious, suspicious, "
+            "harmless, undetected, permalink, report_json, analysis_id, "
+            "error) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (sha256) DO UPDATE SET status = EXCLUDED.status, "
+            "malicious = EXCLUDED.malicious, "
+            "suspicious = EXCLUDED.suspicious, "
+            "harmless = EXCLUDED.harmless, "
+            "undetected = EXCLUDED.undetected, "
+            "permalink = EXCLUDED.permalink, "
+            "report_json = EXCLUDED.report_json, "
+            "analysis_id = EXCLUDED.analysis_id, "
+            "error = EXCLUDED.error, updated_at = now()",
+            (sha, status, malicious, suspicious, harmless, undetected,
+             permalink, report_json, analysis_id, error))
+
+    async def vt_candidates(self, limit: int, cutoff):
+        """Blobs never scanned; pending analyses (re-polled, never
+        re-uploaded); and rows older than cutoff (errors and stale
+        successes alike are due for a re-check)."""
+        return await self._exec(
+            "SELECT b.sha256, b.size FROM blobs b "
+            "LEFT JOIN vt_scans v ON v.sha256 = b.sha256 "
+            "WHERE v.sha256 IS NULL OR v.status = 'pending' "
+            "OR v.updated_at < %s "
+            "ORDER BY b.first_seen LIMIT %s",
+            (cutoff, limit), fetch="all")
+
+    async def claim_vt_quota(self, day, cap: int):
+        """Atomically consume one daily VT request if under cap; True
+        when the caller may proceed."""
+        row = await self._exec(
+            "INSERT INTO vt_quota (day, used) VALUES (%s, 1) "
+            "ON CONFLICT (day) DO UPDATE SET used = vt_quota.used + 1 "
+            "WHERE vt_quota.used < %s RETURNING used",
+            (day, cap), fetch="one")
+        return row is not None
+
+    async def vt_quota_used(self, day) -> int:
+        row = await self._exec(
+            "SELECT used FROM vt_quota WHERE day = %s", (day,),
+            fetch="one")
+        return row[0] if row else 0
+
+    # -- ip intel --------------------------------------------------------
+    _INTEL_COLS = ("attacker_ip", "rdns", "status", "open_ports",
+                   "raw_xml", "error", "scanned_at")
+
+    @classmethod
+    def _intel_row(cls, row):
+        return dict(zip(cls._INTEL_COLS, row))
+
+    async def get_ip_intel(self, ip: str):
+        row = await self._exec(
+            "SELECT attacker_ip, rdns, status, open_ports, raw_xml, error, "
+            "scanned_at FROM ip_intel WHERE attacker_ip = %s", (ip,),
+            fetch="one")
+        return self._intel_row(row) if row else None
+
+    async def save_ip_intel(self, ip: str, rdns: str = "", status: str = "ok",
+                            open_ports: str = "[]", raw_xml: str = "",
+                            error: str = ""):
+        await self._exec(
+            "INSERT INTO ip_intel (attacker_ip, rdns, status, open_ports, "
+            "raw_xml, error) VALUES (%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (attacker_ip) DO UPDATE SET rdns = EXCLUDED.rdns, "
+            "status = EXCLUDED.status, open_ports = EXCLUDED.open_ports, "
+            "raw_xml = EXCLUDED.raw_xml, error = EXCLUDED.error, "
+            "scanned_at = now()",
+            (ip, rdns, status, open_ports, raw_xml, error))
+
+    async def ips_needing_scan(self, limit: int, cutoff):
+        """Attacker IPs seen in sessions with no (or stale) intel row."""
+        rows = await self._exec(
+            "SELECT DISTINCT s.attacker_ip FROM sessions s "
+            "LEFT JOIN ip_intel i ON i.attacker_ip = s.attacker_ip "
+            "WHERE s.attacker_ip <> '' "
+            "AND (i.attacker_ip IS NULL OR i.scanned_at < %s) "
+            "LIMIT %s", (cutoff, limit), fetch="all")
+        return [row[0] for row in rows]
+
+    # -- attacker overview (console) --------------------------------------
+    async def list_attackers(self, limit=200, offset=0):
+        return await self._exec(
+            "SELECT s.attacker_ip, COUNT(DISTINCT s.session_id) AS sessions, "
+            "MAX(s.started_at) AS last_seen, "
+            "COUNT(DISTINCT f.id) AS files, "
+            "COUNT(DISTINCT CASE WHEN v.malicious > 0 THEN f.id END) "
+            "AS malicious, i.status AS intel "
+            "FROM sessions s "
+            "LEFT JOIN session_files f ON f.session_id = s.session_id "
+            "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
+            "LEFT JOIN ip_intel i ON i.attacker_ip = s.attacker_ip "
+            "WHERE s.attacker_ip <> '' "
+            "GROUP BY s.attacker_ip, i.status "
+            "ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
+            (limit, offset), fetch="all")
+
+    async def list_files_by_ip(self, ip: str, limit=500):
+        return await self._exec(
+            "SELECT f.id, f.session_id, f.name, f.blob_sha, f.size, f.at, "
+            "v.status, v.malicious, v.suspicious "
+            "FROM session_files f JOIN sessions s "
+            "ON s.session_id = f.session_id "
+            "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
+            "WHERE s.attacker_ip = %s ORDER BY f.id DESC LIMIT %s",
+            (ip, limit), fetch="all")

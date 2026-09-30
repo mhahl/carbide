@@ -22,6 +22,8 @@ class FakeDatabase:
         self.snapshots = []
         self.squid = []
         self.applied = set()
+        self.vt_scans = {}
+        self.intel = {}
 
     async def note_sensor(self, sensor_id):
         self.sensors.setdefault(sensor_id, {"first": utcnow()})
@@ -350,6 +352,77 @@ class FakeDatabase:
 
     async def delete_managed_sensor(self, sensor_id):
         getattr(self, "managed", {}).pop(sensor_id, None)
+
+    async def get_vt_scan(self, sha):
+        row = self.vt_scans.get(sha)
+        return dict(row) if row else None
+
+    async def get_vt_scans(self, shas):
+        return {s: dict(self.vt_scans[s]) for s in dict.fromkeys(shas)
+                if s and s in self.vt_scans}
+
+    async def save_vt_scan(self, sha, status, malicious=0, suspicious=0,
+                           harmless=0, undetected=0, permalink="",
+                           report_json="", analysis_id="", error=""):
+        self.vt_scans[sha] = {
+            "sha256": sha, "status": status, "malicious": malicious,
+            "suspicious": suspicious, "harmless": harmless,
+            "undetected": undetected, "permalink": permalink,
+            "report_json": report_json, "analysis_id": analysis_id,
+            "error": error, "scanned_at": utcnow(), "updated_at": utcnow()}
+
+    async def get_ip_intel(self, ip):
+        row = self.intel.get(ip)
+        return dict(row) if row else None
+
+    async def save_ip_intel(self, ip, rdns="", status="ok", open_ports="[]",
+                            raw_xml="", error=""):
+        self.intel[ip] = {
+            "attacker_ip": ip, "rdns": rdns, "status": status,
+            "open_ports": open_ports, "raw_xml": raw_xml, "error": error,
+            "scanned_at": utcnow()}
+
+    async def list_attackers(self, limit=200, offset=0):
+        by_ip = {}
+        for s in self.sessions.values():
+            ip = s["attacker_ip"]
+            if not ip:
+                continue
+            entry = by_ip.setdefault(ip, {"sessions": 0, "seen": None})
+            entry["sessions"] += 1
+            if s["started_at"] is not None and (
+                    entry["seen"] is None
+                    or s["started_at"] > entry["seen"]):
+                entry["seen"] = s["started_at"]
+        rows = []
+        for ip, entry in by_ip.items():
+            sids = {s["session_id"] for s in self.sessions.values()
+                    if s["attacker_ip"] == ip}
+            files = [f for f in self.files if f[0] in sids]
+            mal = sum(1 for f in files
+                      if (self.vt_scans.get(f[2]) or {}).get("malicious", 0)
+                      > 0)
+            intel = self.intel.get(ip, {}).get("status")
+            rows.append((ip, entry["sessions"], entry["seen"], len(files),
+                         mal, intel))
+        floor = datetime.datetime.min.replace(
+            tzinfo=datetime.timezone.utc)
+        rows.sort(key=lambda r: r[2] or floor, reverse=True)
+        return rows[offset:offset + limit]
+
+    async def list_files_by_ip(self, ip, limit=500):
+        sids = {s["session_id"] for s in self.sessions.values()
+                if s["attacker_ip"] == ip}
+        rows = []
+        for idx, f in enumerate(self.files):
+            if f[0] not in sids:
+                continue
+            vt = self.vt_scans.get(f[2]) or {}
+            rows.append((idx, f[0], f[1], f[2], f[3], f[4],
+                         vt.get("status"), vt.get("malicious"),
+                         vt.get("suspicious")))
+        rows.reverse()
+        return rows[:limit]
 
 
 class _FakeContainer:

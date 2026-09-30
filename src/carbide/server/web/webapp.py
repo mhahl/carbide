@@ -77,6 +77,8 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_get("/sessions/{id}", views.session_detail)
     app.router.add_get("/sessions/{id}/transcript",
                        views.transcript_fragment)
+    app.router.add_get("/attackers", views.attackers_list)
+    app.router.add_get("/attackers/{ip}", views.attacker_detail)
     app.router.add_get("/files/{sha}/download", views.file_download)
     app.router.add_get("/snapshots", views.snapshots_list)
     app.router.add_get("/compare", views.compare)

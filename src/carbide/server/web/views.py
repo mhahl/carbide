@@ -159,8 +159,16 @@ async def session_detail(request):
         "seq": c[4], "at": c[6],
         "text": c[5].decode("utf-8", "replace") if isinstance(c[5], bytes)
         else str(c[5])} for c in chunks]
-    files = [dict(zip(("id", "name", "sha", "size", "at"), f))
-             for f in await db.list_session_files(sid)]
+    raw_files = await db.list_session_files(sid)
+    verdicts = await db.get_vt_scans([f[2] for f in raw_files])
+    files = []
+    for f in raw_files:
+        entry = dict(zip(("id", "name", "sha", "size", "at"), f))
+        vt = verdicts.get(entry["sha"]) if entry["sha"] else None
+        entry["vt"] = vt["status"] if vt else ""
+        entry["vt_malicious"] = vt["malicious"] if vt else 0
+        entry["vt_link"] = vt["permalink"] if vt else ""
+        files.append(entry)
     attempts = [dict(zip(
         ("id", "session_id", "sensor_id", "username", "password",
          "accepted", "matched", "at"), t))
@@ -177,6 +185,44 @@ async def session_detail(request):
         "attempts": attempts, "hits": hits, "diffs": diffs,
         "report": report[0] if report else "",
         "last_chunk": chunks[-1][0] if chunks else 0})
+
+
+# -- attackers ---------------------------------------------------------
+@require_auth
+async def attackers_list(request):
+    db = request.app["db"]
+    page, offset, limit = _page_params(request)
+    rows = await db.list_attackers(limit=limit + 1, offset=offset)
+    return render(request, "attackers.html", {
+        "rows": [dict(zip(("ip", "sessions", "last_seen", "files",
+                           "malicious", "intel"), t))
+                 for t in rows[:limit]],
+        "page": page, "has_more": len(rows) > limit,
+        "base_query": _base_query(request)})
+
+
+@require_auth
+async def attacker_detail(request):
+    db = request.app["db"]
+    ip = request.match_info["ip"]
+    sessions = [_srow(t) for t in
+                await db.list_sessions(ip=ip, limit=200)]
+    intel = await db.get_ip_intel(ip)
+    if not sessions and intel is None:
+        return render(request, "error.html",
+                      {"message": f"no such attacker {ip}"}, status=404)
+    files = [dict(zip(("id", "session_id", "name", "sha", "size", "at",
+                        "vt", "vt_malicious", "vt_suspicious"), f))
+             for f in await db.list_files_by_ip(ip)]
+    ports = []
+    if intel is not None:
+        try:
+            ports = json.loads(intel["open_ports"] or "[]")
+        except (ValueError, TypeError):
+            ports = []
+    return render(request, "attacker_detail.html", {
+        "ip": ip, "intel": intel, "ports": ports, "sessions": sessions,
+        "files": files})
 
 
 @require_auth

@@ -124,6 +124,7 @@ Server `.env`:
 | `WEB_BIND` / `WEB_PORT` | `10.89.0.1` / `8080` | host bind for the web console (container serves 8080); flags: `--web-bind`, `--web-port` |
 | `MGMT_KEY_PATH` | — | host path to the sensor-mgmt SSH key (flag: `--mgmt-key`); staged 0600 for the server, enables remote sensor ops |
 | `BLOB_MOUNT` | named volume | whole `source:target[:opts]` fragment; set to a host path (e.g. an NFS mount, see below) to store blobs there instead |
+| `VT_API_KEY` | — (off) | VirusTotal Community key (flag: `--vt-key`); enables file verdicts. Public tier: 4 req/min, 500/day, non-commercial only |
 
 Sensor `.env`:
 
@@ -294,6 +295,28 @@ CARBIDE_ADMIN_PASSWORD=... podman compose exec -e CARBIDE_ADMIN_PASSWORD server 
 Back up: `podman compose exec db pg_dump -U carbide carbide`, the
 `carbide-blobs` volume, the sensor `sensor-keys` volume, and both `.env`
 files (tokens live there — treat as secrets).
+
+## Threat intel
+
+File verdicts and attacker profiling run as server background jobs:
+
+- **VirusTotal** (off until `VT_API_KEY` is set): captured files are
+  looked up by hash first and uploaded only when unknown; verdicts are
+  cached in `vt_scans` (re-checked after 30 days). The queue paces
+  itself to the public tier (4/min, 500/day, persisted across
+  restarts). Quota spend is visible per day:
+  `SELECT * FROM vt_quota ORDER BY day DESC LIMIT 7;`
+  Backfill history on demand (spends quota, then exits):
+  `podman compose exec server carbide-server -c /etc/carbide/config.toml --vt-backfill`
+  Note: submissions join VT's public dataset; the public key must not
+  be used commercially — premium keys just need higher
+  `requests_per_minute`/`daily_cap` in the template.
+- **nmap** (on by default, `[ipintel] enabled = false` to stop): each
+  new attacker IP gets one `-sT -sV` top-1000-ports scan, cached 7
+  days; results land in `ip_intel` and the console **Attackers** view.
+  Connect-scan only — no raw sockets, no container capabilities. This
+  is unsolicited outbound scanning (targets may be spoofed or victim
+  hosts); disable it if that doesn't fit your policy.
 
 ## Troubleshoot
 

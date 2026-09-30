@@ -1,0 +1,7 @@
+{% if f.vt == "malicious" %}<span class="badge badge-error badge-soft badge-xs">malicious{% if f.vt_malicious %} · {{ f.vt_malicious }}{% endif %}</span>
+{% elif f.vt == "suspicious" %}<span class="badge badge-warning badge-soft badge-xs">suspicious</span>
+{% elif f.vt == "clean" %}<span class="badge badge-success badge-soft badge-xs">clean</span>
+{% elif f.vt == "pending" %}<span class="badge badge-info badge-soft badge-xs">pending</span>
+{% elif f.vt == "skipped" or f.vt == "error" %}<span class="badge badge-ghost badge-xs">{{ f.vt }}</span>
+{% else %}<span class="badge badge-ghost badge-xs">unscanned</span>{% endif %}
+{% if f.vt_link %} <a class="link text-xs" href="{{ f.vt_link }}">VT</a>{% endif %}

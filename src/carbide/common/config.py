@@ -93,13 +93,27 @@ _SCHEMA = {
         "connect_timeout_s": ((int, float), False, 10.0),
         "files_dir": (str, False, ""),
     },
+    "virustotal": {
+        "enabled": (bool, False, False),
+        "api_key": (str, False, ""),
+        "requests_per_minute": (int, False, 4),
+        "daily_cap": (int, False, 500),
+        "max_upload_bytes": (int, False, 32 * 1024 * 1024),
+        "rescan_after_days": (int, False, 30),
+    },
+    "ipintel": {
+        "enabled": (bool, False, True),
+        "nmap_args": (list, False, ["-sT", "-sV", "--top-ports", "1000"]),
+        "cache_days": (int, False, 7),
+        "timeout_s": ((int, float), False, 300.0),
+    },
 }
 
 _ROLE_SECTIONS = {
     "sensor": {"sensor", "auth", "logging"},
     "server": {
         "server", "podman", "affinity", "forensics", "squid", "quotas",
-        "logging", "web", "sensor_mgmt",
+        "logging", "web", "sensor_mgmt", "virustotal", "ipintel",
     },
 }
 
@@ -131,6 +145,12 @@ def _check_ranges(section: str, key: str, value: Any) -> None:
                "pool_size"):
         if value < 0:
             raise ConfigError(f"[{section}] {key} must be >= 0, got {value!r}")
+    if key in ("requests_per_minute", "daily_cap", "max_upload_bytes",
+               "rescan_after_days", "cache_days"):
+        if value < 1:
+            raise ConfigError(f"[{section}] {key} must be >= 1, got {value!r}")
+    if key == "timeout_s" and value <= 0:
+        raise ConfigError(f"[{section}] {key} must be > 0, got {value!r}")
 
 
 class Config:
@@ -246,4 +266,12 @@ def validate(raw: dict) -> Config:
         if data["squid"]["mode"] == "explicit" and not data["squid"]["explicit_proxy"]:
             raise ConfigError(
                 "[squid] explicit_proxy is required when mode = explicit")
+        if data["virustotal"]["enabled"] and not data["virustotal"]["api_key"]:
+            raise ConfigError(
+                "[virustotal] api_key is required when enabled = true")
+        for arg in data["ipintel"]["nmap_args"]:
+            if not isinstance(arg, str) or not arg or arg[:1].isspace():
+                raise ConfigError(
+                    "[ipintel] nmap_args must be non-empty strings, "
+                    f"got {arg!r}")
     return Config(data)

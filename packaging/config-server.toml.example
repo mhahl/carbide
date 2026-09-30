@@ -59,3 +59,17 @@ user = "carbide"          # default SSH user (per-sensor override in console)
 port = 22
 connect_timeout_s = 10.0
 files_dir = ""            # compose/sensor source for provisioning (autodetect)
+
+[virustotal]
+enabled = false           # file verdicts; needs a Community API key below
+api_key = ""              # https://www.virustotal.com/gui/join-us
+requests_per_minute = 4   # public tier; raise for premium keys
+daily_cap = 500
+max_upload_bytes = 33554432  # 32MB VT direct-upload limit
+rescan_after_days = 30    # re-check verdicts older than this
+
+[ipintel]
+enabled = true            # automatic nmap profiling of attacker IPs
+nmap_args = ["-sT", "-sV", "--top-ports", "1000"]
+cache_days = 7            # one scan per IP per this long
+timeout_s = 300.0

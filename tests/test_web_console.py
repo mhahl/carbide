@@ -149,6 +149,7 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
                      f"/podman/containers/{cid}/diff",
                      f"/podman/containers/{cid}/file?path=/etc/motd",
                      "/sensors", "/sensors/new", "/sensors/s1",
+                     "/attackers", "/attackers/9.9.9.9",
                      "/logs", "/users", "/fragments/containers",
                      "/fragments/sensors", "/fragments/recent-sessions"):
             with self.subTest(path=path):
@@ -156,6 +157,40 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(resp.status, 200, path)
         resp = await self.client.get("/sessions/nope")
         self.assertEqual(resp.status, 404)
+        resp = await self.client.get("/attackers/8.8.8.8")
+        self.assertEqual(resp.status, 404)
+
+    async def test_attackers_and_verdicts(self):
+        ref = await self._seed_session()
+        await self.db.save_vt_scan(
+            ref.sha256, "malicious", malicious=9, harmless=60,
+            permalink="https://www.virustotal.com/gui/file/abc")
+        await self.db.save_ip_intel(
+            "9.9.9.9", rdns="evil.example.com",
+            open_ports='[{"port": 22, "proto": "tcp", "service": "ssh", '
+                       '"version": "OpenSSH 8.9"}]')
+        await self.login()
+        body = await (await self.client.get("/attackers")).text()
+        self.assertIn("9.9.9.9", body)
+        self.assertIn('badge-success badge-soft badge-xs">scanned</span>',
+                      body)
+        body = await (await self.client.get("/attackers/9.9.9.9")).text()
+        self.assertIn("evil.example.com", body)
+        self.assertIn("OpenSSH 8.9", body)
+        self.assertIn("mimikatz.exe", body)
+        self.assertIn("sess1", body)
+        body = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn("malicious", body)
+        self.assertIn("https://www.virustotal.com/gui/file/abc", body)
+
+    async def test_attacker_unscanned_states(self):
+        await self._seed_session()
+        await self.login()
+        body = await (await self.client.get("/attackers/9.9.9.9")).text()
+        self.assertIn("nmap queued", body)
+        self.assertIn("unscanned", body)
+        body = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn("unscanned", body)
 
     async def test_empty_states_and_reset_modal(self):
         await self.login()

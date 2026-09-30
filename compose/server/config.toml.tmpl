@@ -60,3 +60,14 @@ user = "carbide"
 port = 22
 connect_timeout_s = 10.0
 files_dir = "/srv/carbide-sensor-files"
+
+[virustotal]
+enabled = ${VT_ENABLED}
+api_key = "${VT_API_KEY}"
+requests_per_minute = 4
+daily_cap = 500
+
+[ipintel]
+enabled = true
+nmap_args = ["-sT", "-sV", "--top-ports", "1000"]
+cache_days = 7
