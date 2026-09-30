@@ -556,6 +556,7 @@ async def users_view(request):
 @require_auth
 async def settings_view(request):
     from ..vt import VT_KEY_SETTING
+    from ..pool import HONEY_IMAGE_SETTING, same_image_ref
     db = request.app["db"]
     cfg = request.app["cfg"]
     stored = await db.get_setting(VT_KEY_SETTING)
@@ -566,6 +567,23 @@ async def settings_view(request):
         source, masked, active = "config file", "••••" + file_key[-4:], True
     else:
         source, masked, active = "none", "", False
+    img_override = await db.get_setting(HONEY_IMAGE_SETTING)
+    file_image = cfg.section("podman")["image"]
+    if img_override and img_override.strip():
+        honey_effective = img_override.strip()
+        honey_source, honey_console_set = "console", True
+    else:
+        honey_effective = file_image
+        honey_source, honey_console_set = "config file", False
+    honey_present = None
+    try:
+        run = request.app["pool"].run_sync
+        images = await run(request.app["pod"].list_images)
+        tags = [t for img in images for t in img.get("tags", [])]
+        honey_present = any(
+            same_image_ref(t, honey_effective) for t in tags)
+    except Exception as exc:
+        log.warning("honeypot image presence check failed: %s", exc)
     today = datetime.datetime.now(datetime.timezone.utc).date()
     return render(request, "settings.html", {
         "vt_source": source, "vt_masked": masked, "vt_active": active,
@@ -573,6 +591,9 @@ async def settings_view(request):
         "vt_used": await db.vt_quota_used(today),
         "vt_cap": cfg.get("virustotal.daily_cap", 500),
         "vt_rpm": cfg.get("virustotal.requests_per_minute", 4),
+        "honey_source": honey_source, "honey_effective": honey_effective,
+        "honey_console_set": honey_console_set,
+        "honey_present": honey_present,
         "error": request.query.get("error") or "",
         "notice": request.query.get("notice") or ""})
 

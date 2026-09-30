@@ -126,6 +126,11 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_post("/settings/virustotal/key/delete",
                         actions.vt_key_clear)
     app.router.add_post("/settings/virustotal/verify", actions.vt_key_verify)
+    app.router.add_post("/settings/honeypot/image", actions.honey_image_save)
+    app.router.add_post("/settings/honeypot/image/delete",
+                        actions.honey_image_clear)
+    app.router.add_post("/settings/honeypot/image/pull",
+                        actions.honey_image_pull)
     app.router.add_static("/static",
                           os.path.join(HERE, "static"),
                           name="static")

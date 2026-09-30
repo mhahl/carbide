@@ -1,8 +1,9 @@
 import unittest
 
 from carbide.common.config import validate
-from carbide.server.pool import Pool
-from carbide.server.podman_wrap import PodmanError
+from carbide.server.pool import (HONEY_IMAGE_SETTING, REF_NAME, Pool,
+                                 same_image_ref)
+from carbide.server.podman_wrap import PodmanError, split_pull_ref
 from tests.fakes import FakeDatabase, FakePodman
 
 
@@ -43,6 +44,55 @@ class PoolTest(unittest.IsolatedAsyncioTestCase):
         for fresh in self.pool._fresh:
             self.assertEqual(
                 self.pod.status(fresh["container_id"]), "running")
+
+    def test_same_image_ref(self):
+        self.assertTrue(same_image_ref("x:1", "x:1"))
+        self.assertTrue(same_image_ref("localhost/x:1", "x:1"))
+        self.assertTrue(same_image_ref("localhost/x:latest", "x"))
+        self.assertFalse(same_image_ref("x:1", "x:2"))
+        self.assertFalse(same_image_ref("", "x"))
+        self.assertFalse(same_image_ref("x:1", ""))
+
+    def test_split_pull_ref(self):
+        self.assertEqual(split_pull_ref("name"), ("name", "latest"))
+        self.assertEqual(split_pull_ref("name:tag"), ("name", "tag"))
+        self.assertEqual(split_pull_ref("host:5000/name"),
+                         ("host:5000/name", "latest"))
+        self.assertEqual(split_pull_ref("host:5000/name:tag"),
+                         ("host:5000/name", "tag"))
+
+    async def test_current_image_override(self):
+        self.assertEqual(await self.pool.current_image(), "img")
+        await self.db.set_setting(HONEY_IMAGE_SETTING, "custom:2")
+        self.assertEqual(await self.pool.current_image(), "custom:2")
+        await self.db.set_setting(HONEY_IMAGE_SETTING, "   ")
+        self.assertEqual(await self.pool.current_image(), "img")
+
+    async def test_refresh_reference_recreates_on_image_change(self):
+        old = [cid for cid, info in self.pod.containers.items()
+               if info["name"] == REF_NAME]
+        self.assertEqual(len(old), 1)
+        await self.pool.refresh_reference()
+        # Same image: baseline untouched.
+        self.assertIn(old[0], self.pod.containers)
+        await self.db.set_setting(HONEY_IMAGE_SETTING, "img:2")
+        await self.pool.refresh_reference()
+        self.assertNotIn(old[0], self.pod.containers)
+        info = self.pod.inspect(REF_NAME)
+        self.assertEqual(info["Config"]["Image"], "img:2")
+        refs = [cid for cid, i in self.pod.containers.items()
+                if i["name"] == REF_NAME]
+        self.assertEqual(len(refs), 1)
+
+    async def test_fresh_spares_use_effective_image(self):
+        await self.db.set_setting(HONEY_IMAGE_SETTING, "img:3")
+        spare = await self.pool._create_fresh()
+        try:
+            info = self.pod.inspect(spare["container_id"])
+            self.assertEqual(info["Config"]["Image"], "img:3")
+        finally:
+            await self.pool.run_sync(
+                self.pod.remove, spare["container_id"])
 
     async def test_hot_assign_does_not_restart(self):
         starts = []

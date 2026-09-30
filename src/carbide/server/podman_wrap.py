@@ -17,6 +17,19 @@ class IsDirError(PodmanError):
     """Raised by get_file when the path is a directory."""
 
 
+def split_pull_ref(ref: str) -> tuple:
+    """Split an image ref into (repository, tag) for images.pull.
+
+    Only a colon after the last slash is a tag separator, so
+    registry ports ("host:5000/name") survive; digest refs and bare
+    names fall back to the "latest" tag.
+    """
+    name, sep, tag = ref.rpartition(":")
+    if not sep or "/" in tag or "@" in ref:
+        return ref, "latest"
+    return name, tag
+
+
 class PodmanWrapper:
     """Thin sync wrapper over podman-py. Raises PodmanError on failures."""
 
@@ -280,3 +293,9 @@ class PodmanWrapper:
             log.warning("remove image %s failed: %s", image, exc)
         else:
             log.debug("removed image %s", image)
+
+    def pull_image(self, ref: str):
+        """Pull an image ref; raises PodmanError on failure."""
+        repo, tag = split_pull_ref(ref)
+        self._wrap(self._client.images.pull, repo, tag=tag)
+        log.info("pulled image %s", ref)

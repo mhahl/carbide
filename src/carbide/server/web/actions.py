@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import secrets
+from urllib.parse import quote
 
 from aiohttp import web
 
@@ -394,3 +395,54 @@ async def vt_key_verify(request):
         raise web.HTTPFound("/settings?error=verify+failed")
     log.info("console %s: virustotal key verified", user)
     raise web.HTTPFound("/settings?notice=key+valid")
+
+
+@require_auth
+async def honey_image_save(request):
+    from ..pool import HONEY_IMAGE_SETTING
+    form = await request.post()
+    ref = (form.get("image") or "").strip()
+    user = request["user"]["username"]
+    if not ref or len(ref) > 256 or any(ch.isspace() for ch in ref):
+        raise web.HTTPFound("/settings?error=image+ref+looks+invalid")
+    await request.app["db"].set_setting(HONEY_IMAGE_SETTING, ref)
+    log.info("console %s: set honeypot image to %s", user, ref)
+    try:
+        await request.app["pool"].refresh_reference()
+    except Exception as exc:
+        log.warning("console %s: baseline refresh after image save "
+                    "failed: %s", user, exc)
+        raise web.HTTPFound(
+            "/settings?notice=image+saved+but+baseline+refresh+failed")
+    raise web.HTTPFound("/settings?notice=honeypot+image+saved")
+
+
+@require_auth
+async def honey_image_clear(request):
+    from ..pool import HONEY_IMAGE_SETTING
+    user = request["user"]["username"]
+    await request.app["db"].delete_setting(HONEY_IMAGE_SETTING)
+    log.info("console %s: cleared console honeypot image", user)
+    try:
+        await request.app["pool"].refresh_reference()
+    except Exception as exc:
+        log.warning("console %s: baseline refresh after image clear "
+                    "failed: %s", user, exc)
+        raise web.HTTPFound(
+            "/settings?notice=image+cleared+but+baseline+refresh+failed")
+    raise web.HTTPFound("/settings?notice=honeypot+image+cleared")
+
+
+@require_auth
+async def honey_image_pull(request):
+    pool = request.app["pool"]
+    user = request["user"]["username"]
+    ref = await pool.current_image()
+    try:
+        await pool.run_sync(request.app["pod"].pull_image, ref)
+    except Exception as exc:
+        log.warning("console %s: honeypot image pull failed: %s", user, exc)
+        raise web.HTTPFound("/settings?error=" + quote(
+            f"pull failed: {exc}"))
+    log.info("console %s: pulled honeypot image %s", user, ref)
+    raise web.HTTPFound("/settings?notice=" + quote(f"pulled {ref}"))

@@ -261,6 +261,40 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status, 302)
         self.assertIn("error=key+rejected+401", resp.headers["Location"])
 
+    async def test_honeypot_image_settings(self):
+        await self.login()
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("Honeypot image", body)
+        self.assertIn("not pulled", body)
+        resp = await self.client.post(
+            "/settings/honeypot/image", data={"image": "custom:9"},
+            allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("notice=", resp.headers["Location"])
+        self.assertEqual(
+            await self.db.get_setting("honeypot.image"), "custom:9")
+        info = self.pod.inspect("carbide-ref")
+        self.assertEqual(info["Config"]["Image"], "custom:9")
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("custom:9", body)
+        self.assertIn("Clear console image", body)
+        resp = await self.client.post(
+            "/settings/honeypot/image/pull", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("custom:9", self.pod.images)
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn(">present</span>", body)
+        resp = await self.client.post(
+            "/settings/honeypot/image", data={"image": "has space"},
+            allow_redirects=False)
+        self.assertIn("error=", resp.headers["Location"])
+        resp = await self.client.post(
+            "/settings/honeypot/image/delete", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIsNone(await self.db.get_setting("honeypot.image"))
+        body = await (await self.client.get("/settings")).text()
+        self.assertNotIn("Clear console image", body)
+
     async def test_server_side_sorting(self):
         await self.db.ensure_session("sa", "s1", "1.1.1.1")
         await self.db.set_session_started(

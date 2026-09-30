@@ -34,5 +34,29 @@
 <p class="text-xs text-base-content/60">A console key overrides the config-file key and takes effect on the next queue pass (no restart). Clearing it falls back to the file. Verify spends one daily request. The key itself is never displayed.</p>
 </div>
 </section>
+<section class="card card-border bg-base-100" aria-label="Honeypot image">
+<div class="card-body p-4 gap-3">
+<div class="flex flex-wrap items-center gap-2">
+<h2 class="font-medium">Honeypot image</h2>
+{% if honey_present is true %}<span class="badge badge-success badge-soft">present</span>{% elif honey_present is false %}<span class="badge badge-warning badge-soft">not pulled</span>{% else %}<span class="badge badge-ghost">unknown</span>{% endif %}
+</div>
+<dl class="grid sm:grid-cols-2 gap-x-4 gap-y-2 text-sm">
+<div><dt class="text-xs text-base-content/60">Effective image</dt><dd class="font-mono font-medium">{{ honey_effective }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Source</dt><dd class="font-medium">{{ honey_source }}</dd></div>
+</dl>
+<form method="post" action="/settings/honeypot/image" data-busy class="flex flex-wrap items-end gap-2">
+<fieldset class="fieldset">
+<label class="label" for="f-honeyimg">Image ref</label>
+<input id="f-honeyimg" type="text" name="image" value="{{ honey_effective }}" placeholder="carbide-honeypot:latest" autocomplete="off" spellcheck="false" class="input input-sm w-72 font-mono">
+</fieldset>
+<button class="btn btn-sm" type="submit">Save image</button>
+</form>
+<div class="flex flex-wrap items-center gap-2">
+<form method="post" action="/settings/honeypot/image/pull" data-busy class="inline"><button class="btn btn-sm btn-ghost" type="submit">Pull now</button></form>
+{% if honey_console_set %}<form method="post" action="/settings/honeypot/image/delete" data-busy class="inline"><button class="btn btn-sm btn-ghost" type="submit">Clear console image</button></form>{% endif %}
+</div>
+<p class="text-xs text-base-content/60">A console image overrides the config-file image for containers created after saving (hot spares and new affinity assignments); running containers keep their image until evicted, and the diff baseline rebuilds automatically. Saving does not pull — use Pull, or pull on the server host, before attackers arrive.</p>
+</div>
+</section>
 </div>
 {% endblock %}

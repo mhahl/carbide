@@ -13,6 +13,23 @@ log = logging.getLogger("carbide.server.pool")
 
 REF_NAME = "carbide-ref"
 
+HONEY_IMAGE_SETTING = "honeypot.image"
+
+
+def same_image_ref(actual: str, want: str) -> bool:
+    """True when two image refs name the same image.
+
+    Tolerates a registry prefix on either side ("localhost/x:1" vs
+    "x:1") and an implied ":latest" on the wanted ref.
+    """
+    if not actual or not want:
+        return False
+    if actual == want or actual.endswith("/" + want):
+        return True
+    if ":" not in want.rsplit("/", 1)[-1]:
+        return same_image_ref(actual, want + ":latest")
+    return False
+
 
 def new_password() -> str:
     return secrets.token_hex(12)
@@ -65,7 +82,7 @@ class Pool:
         if capacity <= 0:
             raise PodmanError("podman port range is empty")
         await self._reconcile()
-        await self._ensure_reference()
+        await self.refresh_reference()
         await self._refill()
         log.info("pool ready (%d fresh containers)", len(self._fresh))
 
@@ -99,21 +116,40 @@ class Pool:
         log.debug("reconcile: %d affinities kept, %d dropped, %d strays "
                   "removed", kept, dropped, strays)
 
-    async def _ensure_reference(self):
-        exists = await self.run_sync(self._pod.exists, REF_NAME)
-        if not exists:
-            port = self._alloc_port()
+    async def current_image(self) -> str:
+        """Effective honeypot image: console override, else config file."""
+        override = await self._db.get_setting(HONEY_IMAGE_SETTING)
+        if override and override.strip():
+            return override.strip()
+        return self._image
+
+    async def refresh_reference(self):
+        """Create the carbide-ref diff baseline, recreating it when the
+        effective image changed underneath it (console override or new
+        config value). Also called live from the settings page."""
+        image = await self.current_image()
+        if await self.run_sync(self._pod.exists, REF_NAME):
             try:
-                await self.run_sync(
-                    self._pod.create_container, REF_NAME, self._image,
-                    self._user, port, self._network,
-                    {"CARBIDE_PASSWORD": new_password()},
-                    self._memory, self._pids)
-            finally:
-                self._free_port(port)
-            log.info("created reference container %s", REF_NAME)
-        else:
-            log.debug("reference container %s present", REF_NAME)
+                info = await self.run_sync(self._pod.inspect, REF_NAME)
+                current = (info.get("Config") or {}).get("Image") or ""
+            except Exception:
+                current = ""
+            if same_image_ref(current, image):
+                log.debug("reference container %s present", REF_NAME)
+                return
+            log.info("reference baseline %s is %r, want %r; recreating",
+                     REF_NAME, current, image)
+            await self.run_sync(self._pod.remove, REF_NAME)
+        port = self._alloc_port()
+        try:
+            await self.run_sync(
+                self._pod.create_container, REF_NAME, image,
+                self._user, port, self._network,
+                {"CARBIDE_PASSWORD": new_password()},
+                self._memory, self._pids)
+        finally:
+            self._free_port(port)
+        log.info("created reference container %s", REF_NAME)
 
     def reference_id(self) -> str:
         return REF_NAME
@@ -147,7 +183,8 @@ class Pool:
         port = self._alloc_port()
         try:
             cid = await self.run_sync(
-                self._pod.create_container, name, self._image, self._user,
+                self._pod.create_container, name,
+                await self.current_image(), self._user,
                 port, self._network, self._env(password),
                 self._memory, self._pids)
         except Exception:

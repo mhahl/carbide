@@ -28,7 +28,7 @@ container -80/443-> Squid -> internet (logged, capped)
 | Squid tailer | server | tails `access.log`, attributes hits to sessions by container IP | egress visibility without TLS interception |
 | Postgres | server stack (`db`) | sessions, auth, transcripts, files, diffs, reports, snapshots, squid hits, affinities | metadata + pointers; blobs live in a volume |
 | blob store | server named volume | `<blob_dir>/<2-hex>/<sha256>`, content-addressed, quota-capped | identical payloads stored once across fleet |
-| honeypot image | server host (siblings) | Alpine + sshd + `honey` user; entrypoint sets password, stamps proxy `SetEnv` | real Linux target; unique host keys per container |
+| honeypot image | server host (siblings) | UBI 9 + sshd + httpd + MySQL 8, fake sqldumps, `honey` user; entrypoint sets password, stamps proxy `SetEnv` | real Linux target; unique host keys per container |
 | Squid | server stack (`squid`) | explicit :3128, peek-and-splice TLS (SNI logged, never decrypted) | web egress with logging, ACLs, body caps |
 
 Honeypot containers are siblings on the host (the server reaches the host
@@ -282,11 +282,12 @@ podman system df -v | grep -A3 carbide
 podman compose exec db psql -U carbide carbide -c \
   "SELECT pg_size_pretty(pg_database_size('carbide'));"
 
-# upgrade the honeypot image (rebuild + push, drop the diff baseline)
+# upgrade the honeypot image (rebuild + push, then switch)
 images/build-push.sh <tag>    # from the repo
+# either: console Settings → Honeypot image → Save + Pull (no restart;
+# new containers pick it up, diff baseline rebuilds itself), or:
 podman pull quay.io/sigaint/carbide-honeypot:<tag>
-podman rm -f carbide-ref      # stale baseline; recreated at next start
-vi .env && ./setup.sh         # set TAG, restart
+vi .env && ./setup.sh         # set TAG, restart (baseline rebuilds)
 
 # wipe the database to blank (TESTING ONLY: deletes all sessions,
 # evidence rows, and console users; the schema stays, so no re-migrate)
