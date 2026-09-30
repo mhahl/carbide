@@ -140,9 +140,12 @@ class IPIntel:
         text = out.decode("utf-8", "replace")
         if code != 0:
             detail = err.decode("utf-8", "replace").strip().splitlines()
-            raise IPIntelError(
-                f"nmap exit {code}: {detail[-1][:200]}" if detail
-                else f"nmap exit {code}")
+            last = detail[-1][:200] if detail else ""
+            hint = ""
+            if "raw socket" in last.lower():
+                hint = " (server container needs NET_RAW; re-run setup.sh)"
+            raise IPIntelError(f"nmap exit {code}: {last}{hint}" if last
+                               else f"nmap exit {code}{hint}")
         try:
             parsed = parse_nmap_xml(text)
         except ET.ParseError as exc:

@@ -84,9 +84,16 @@ services:
         condition: service_healthy
     # The server drives the HOST podman socket; Fedora policy forbids confined
     # containers from connecting to it, so SELinux confinement is off for this
-    # service (capabilities/devices stay restricted). The sensor needs none.
+    # service (other capabilities/devices stay restricted). The sensor needs
+    # none of this.
     security_opt:
       - label=disable
+    # nmap -sV needs raw sockets and podman's default capability set lacks
+    # NET_RAW (unlike Docker's); without this every scan fails with
+    # "Couldn't open a raw socket". Takes effect on stack recreate because
+    # the server runs rootful.
+    cap_add:
+      - NET_RAW
     restart: unless-stopped
 
 networks:

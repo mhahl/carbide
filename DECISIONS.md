@@ -299,10 +299,13 @@ Decisions (written as they settle):
   intel; unsolicited-traffic concern contained by the connect-scan profile
   (T4) and the disable flag.
 - T4 — nmap profile is connect scan plus version detection (user chose
-  option 3, 2026-09-30): `-sT -sV --top-ports 1000`, unprivileged, one
-  scan per IP per 7 days, serialized with a timeout. Rationale: richest
-  useful intel (what is actually listening, not just what is open);
-  accepted cost is slower, chattier scans. Profile stays a config knob.
+  option 3, 2026-09-30): `-sT -sV --top-ports 1000`, one scan per IP
+  per 7 days, serialized with a timeout. Rationale: richest useful
+  intel (what is actually listening, not just what is open); accepted
+  cost is slower, chattier scans. Profile stays a config knob.
+  Correction 2026-09-30 (live finding, decision unchanged): `-sV`
+  needs raw sockets, so the server service grants `NET_RAW` in compose
+  — the "unprivileged" note in the original plan was wrong.
 - T5 — New files only, plus a manual backfill command (user chose option
   1, 2026-09-30): the worker scans evidence captured after deploy; a
   `carbide-server --vt-backfill` flag drains pre-existing blobs on demand.

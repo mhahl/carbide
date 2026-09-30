@@ -316,7 +316,8 @@ File verdicts and attacker profiling run as server background jobs:
 - **nmap** (on by default, `[ipintel] enabled = false` to stop): each
   new attacker IP gets one `-sT -sV` top-1000-ports scan, cached 7
   days; results land in `ip_intel` and the console **Attackers** view.
-  Connect-scan only — no raw sockets, no container capabilities. This
+  Version detection needs raw sockets, so the server service grants
+  `NET_RAW` (re-run `setup.sh` after updating to pick it up). This
   is unsolicited outbound scanning (targets may be spoofed or victim
   hosts); disable it if that doesn't fit your policy.
 

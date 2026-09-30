@@ -94,6 +94,12 @@ class ComposeBindTest(unittest.TestCase):
         self.assertIn("label=disable", opts)
 
     @requires_yaml
+    def test_server_has_net_raw_for_nmap(self):
+        # nmap -sV needs raw sockets; podman's default caps lack NET_RAW.
+        caps = _load_services(SERVER_COMPOSE)["server"].get("cap_add", [])
+        self.assertIn("NET_RAW", caps)
+
+    @requires_yaml
     def test_config_binds_no_autocreate(self):
         for path, svc in ((SERVER_COMPOSE, "server"),
                           (SENSOR_COMPOSE, "sensor")):

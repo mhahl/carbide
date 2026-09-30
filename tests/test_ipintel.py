@@ -114,6 +114,17 @@ class IntelQueueTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(failed["status"], "error")
         self.assertIn("nmap exit 1", failed["error"])
 
+    async def test_raw_socket_failure_names_fix(self):
+        await self.db.ensure_session("s1", "s1", "1.2.3.4")
+        self.result = (1, b"",
+                       b"Couldn't open a raw socket. "
+                       b"Error: Operation not permitted (1)")
+        self.assertEqual(await self.intel.run_once(), 1)
+        row = await self.db.get_ip_intel("1.2.3.4")
+        self.assertEqual(row["status"], "error")
+        self.assertIn("nmap exit 1", row["error"])
+        self.assertIn("NET_RAW", row["error"])
+
     async def test_missing_binary_stops_pass(self):
         await self.db.ensure_session("s1", "s1", "1.2.3.4")
 
