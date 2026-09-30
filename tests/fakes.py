@@ -441,7 +441,7 @@ class FakeDatabase:
             vt = self.vt_scans.get(f[2]) or {}
             rows.append((idx, f[0], f[1], f[2], f[3], f[4],
                          vt.get("status"), vt.get("malicious"),
-                         vt.get("suspicious")))
+                         vt.get("suspicious"), vt.get("permalink")))
         rows.reverse()
         return rows[:limit]
 

@@ -282,12 +282,16 @@ Open questions (the interview tree — visibly unresolved):
 
 Decisions (written as they settle):
 - T1 — Session blobs only; no proxy-download bytes in this stage (user
-  chose option 3, 2026-09-30): VirusTotal-scan only files carbide already
-  holds as evidence (session uploads, forensic contents). No URL refetch,
-  no squid body capture — so proxy downloads get no verdicts for now, and
-  T0a/T0b apply to copied/session files only. Rationale: smallest correct
-  scope; download-byte capture returns as its own follow-up interview if
+  chose option 3, 2026-09-30): VirusTotal-scan only files copied in
+  session (scp/sftp evidence). No URL refetch, no squid body capture —
+  so proxy downloads get no verdicts for now, and T0a/T0b apply to
+  copied/session files only. Rationale: smallest correct scope;
+  download-byte capture returns as its own follow-up interview if
   ever wanted.
+  Correction 2026-09-30 (user request, scope narrowed): forensic-only
+  blobs (changed-file contents never exfiltrated in session) are
+  excluded from scanning — `vt_candidates` reads `session_files`,
+  not `blobs`.
 - T2 — Public VirusTotal key (user chose option 1, 2026-09-30): free
   Community tier, 4 requests/minute and 500/day, non-commercial use only.
   The worker paces itself to these limits with a persisted daily counter;

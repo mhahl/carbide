@@ -228,10 +228,15 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_vt_scans_crud_and_candidates(self):
         self.assertIsNone(await self.db.get_vt_scan("c" * 64))
-        await self.db.add_blob("c" * 64, "/blobs/cc", 3)
-        await self.db.add_blob("d" * 64, "/blobs/dd", 4)
+        await self.db.ensure_session("s", "s1", "9.9.9.9")
+        await self.db.add_session_file("s", "up/c", "c" * 64, 3, now())
+        await self.db.add_session_file("s", "up/d", "d" * 64, 4, now())
+        await self.db.add_session_file("s", "dropped", "", 0, now())
+        await self.db.add_blob("f" * 64, "/blobs/ff", 5)
         cutoff = now() - datetime.timedelta(days=30)
         cands = await self.db.vt_candidates(10, cutoff)
+        # session files only: dropped (empty sha) and forensic-only
+        # blobs are never candidates
         self.assertEqual({sha for sha, _size in cands},
                          {"c" * 64, "d" * 64})
         await self.db.save_vt_scan("c" * 64, "malicious", malicious=5,
@@ -298,7 +303,7 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         frows = await self.db.list_files_by_ip("9.9.9.9")
         self.assertEqual(len(frows), 1)
         self.assertEqual(frows[0][2:], ("up/x", "e" * 64, 3, frows[0][5],
-                                        "malicious", 9, 0))
+                                        "malicious", 9, 0, ""))
         self.assertEqual(await self.db.list_files_by_ip("8.8.8.8"), [])
 
     async def test_server_settings_crud(self):

@@ -53,7 +53,7 @@
 <thead><tr><th scope="col">Name</th><th scope="col">Session</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th></tr></thead>
 <tbody>
 {% for f in files %}
-<tr class="hover:bg-base-200"><td class="font-mono break-all">{{ f.name }}</td>
+<tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td>
 <td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ f.session_id }}">{{ f.session_id[:12] }}</a></td>
 <td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
 <td>{% include "_verdict.html" %}</td></tr>

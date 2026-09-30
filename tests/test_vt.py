@@ -188,9 +188,16 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
         await loop.run_in_executor(None, self.cluster.stop)
         self.tmp.cleanup()
 
+    async def _capture(self, ref, name="up/x"):
+        await self.db.ensure_session("s", "s1", "9.9.9.9")
+        await self.db.add_blob(ref.sha256, ref.path, ref.size)
+        await self.db.add_session_file(
+            "s", name, ref.sha256, ref.size,
+            datetime.datetime.now(datetime.timezone.utc))
+
     async def test_known_file_saved_without_upload(self):
         ref = self.blobs.put_bytes(b"evil")
-        await self.db.add_blob(ref.sha256, ref.path, ref.size)
+        await self._capture(ref)
         self.client.lookups[ref.sha256] = {
             "status": "malicious", "malicious": 9, "suspicious": 0,
             "harmless": 60, "undetected": 5, "permalink": "https://vt/g",
@@ -205,7 +212,7 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_unknown_file_uploaded_then_polled(self):
         ref = self.blobs.put_bytes(b"brand-new")
-        await self.db.add_blob(ref.sha256, ref.path, ref.size)
+        await self._capture(ref)
         self.assertEqual(await self.queue.run_once(), 1)
         row = await self.db.get_vt_scan(ref.sha256)
         self.assertEqual((row["status"], row["analysis_id"]),
@@ -225,10 +232,15 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_oversize_and_missing_blob(self):
         big = "b" * 64
-        await self.db.add_blob(big, "/blobs/bb", 64 * 1024 * 1024)
         gone = "c" * 64
-        await self.db.add_blob(gone, "/blobs/gone", 3)
+        await self.db.ensure_session("s", "s1", "9.9.9.9")
+        at = datetime.datetime.now(datetime.timezone.utc)
+        await self.db.add_session_file("s", "up/big", big,
+                                       64 * 1024 * 1024, at)
+        await self.db.add_session_file("s", "up/gone", gone, 3, at)
+        await self.db.add_blob("f" * 64, "/blobs/ff", 5)
         self.assertEqual(await self.queue.run_once(), 2)
+        self.assertIsNone(await self.db.get_vt_scan("f" * 64))
         skipped = await self.db.get_vt_scan(big)
         self.assertEqual(skipped["status"], "skipped")
         self.assertIn("exceeds", skipped["error"])
@@ -239,7 +251,7 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_quota_and_auth_stop_pass(self):
         ref = self.blobs.put_bytes(b"q")
-        await self.db.add_blob(ref.sha256, ref.path, ref.size)
+        await self._capture(ref)
         self.client.lookup_error = VTQuotaExceeded("cap")
         self.assertEqual(await self.queue.run_once(), 0)
         self.assertIsNone(await self.db.get_vt_scan(ref.sha256))
@@ -258,7 +270,7 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_queue_idles_without_key(self):
         ref = self.blobs.put_bytes(b"nokey")
-        await self.db.add_blob(ref.sha256, ref.path, ref.size)
+        await self._capture(ref)
         queue = VTQueue(self.db, self.blobs, make_cfg())
         self.assertEqual(await queue.run_once(), 0)
         self.assertIsNone(await self.db.get_vt_scan(ref.sha256))

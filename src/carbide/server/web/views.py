@@ -180,8 +180,11 @@ async def session_detail(request):
     diffs = [{"path": p, "kind": k}
              for p, k in await db.get_diff_rows(sid)]
     report = await db.get_report(sid)
+    detected = sum(1 for f in files
+                   if f["vt"] in ("malicious", "suspicious"))
     return render(request, "session_detail.html", {
         "s": session, "transcript": transcript, "files": files,
+        "files_detected": detected,
         "attempts": attempts, "hits": hits, "diffs": diffs,
         "report": report[0] if report else "",
         "last_chunk": chunks[-1][0] if chunks else 0})
@@ -212,7 +215,8 @@ async def attacker_detail(request):
         return render(request, "error.html",
                       {"message": f"no such attacker {ip}"}, status=404)
     files = [dict(zip(("id", "session_id", "name", "sha", "size", "at",
-                        "vt", "vt_malicious", "vt_suspicious"), f))
+                        "vt", "vt_malicious", "vt_suspicious",
+                        "vt_link"), f))
              for f in await db.list_files_by_ip(ip)]
     ports = []
     if intel is not None:

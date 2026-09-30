@@ -809,15 +809,16 @@ class Database:
              permalink, report_json, analysis_id, error))
 
     async def vt_candidates(self, limit: int, cutoff):
-        """Blobs never scanned; pending analyses (re-polled, never
-        re-uploaded); and rows older than cutoff (errors and stale
-        successes alike are due for a re-check)."""
+        """Session-captured files (scp/sftp evidence) never scanned;
+        pending analyses (re-polled, never re-uploaded); and rows older
+        than cutoff (errors and stale successes alike are due for a
+        re-check). Forensic-only blobs are deliberately excluded."""
         return await self._exec(
-            "SELECT b.sha256, b.size FROM blobs b "
-            "LEFT JOIN vt_scans v ON v.sha256 = b.sha256 "
-            "WHERE v.sha256 IS NULL OR v.status = 'pending' "
-            "OR v.updated_at < %s "
-            "ORDER BY b.first_seen LIMIT %s",
+            "SELECT f.blob_sha, MAX(f.size) AS size FROM session_files f "
+            "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
+            "WHERE f.blob_sha <> '' AND (v.sha256 IS NULL "
+            "OR v.status = 'pending' OR v.updated_at < %s) "
+            "GROUP BY f.blob_sha ORDER BY MIN(f.at) LIMIT %s",
             (cutoff, limit), fetch="all")
 
     async def claim_vt_quota(self, day, cap: int):
@@ -911,7 +912,7 @@ class Database:
     async def list_files_by_ip(self, ip: str, limit=500):
         return await self._exec(
             "SELECT f.id, f.session_id, f.name, f.blob_sha, f.size, f.at, "
-            "v.status, v.malicious, v.suspicious "
+            "v.status, v.malicious, v.suspicious, v.permalink "
             "FROM session_files f JOIN sessions s "
             "ON s.session_id = f.session_id "
             "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "

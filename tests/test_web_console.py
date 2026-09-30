@@ -182,9 +182,17 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("OpenSSH 8.9", body)
         self.assertIn("mimikatz.exe", body)
         self.assertIn("sess1", body)
+        self.assertIn(
+            'href="https://www.virustotal.com/gui/file/abc">mimikatz.exe',
+            body)
         body = await (await self.client.get("/sessions/sess1")).text()
         self.assertIn("malicious", body)
-        self.assertIn("https://www.virustotal.com/gui/file/abc", body)
+        self.assertIn(
+            'href="https://www.virustotal.com/gui/file/abc">mimikatz.exe',
+            body)
+        self.assertNotIn(">VT</a>", body)
+        self.assertIn("1/1 detected", body)
+        self.assertIn("xl:col-span-2", body)
 
     async def test_attacker_unscanned_states(self):
         await self._seed_session()
@@ -194,6 +202,7 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("unscanned", body)
         body = await (await self.client.get("/sessions/sess1")).text()
         self.assertIn("unscanned", body)
+        self.assertIn("0/1 detected", body)
 
     async def test_vt_key_settings_flow(self):
         await self.login()

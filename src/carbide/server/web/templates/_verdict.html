@@ -4,4 +4,3 @@
 {% elif f.vt == "pending" %}<span class="badge badge-info badge-soft badge-xs">pending</span>
 {% elif f.vt == "skipped" or f.vt == "error" %}<span class="badge badge-ghost badge-xs">{{ f.vt }}</span>
 {% else %}<span class="badge badge-ghost badge-xs">unscanned</span>{% endif %}
-{% if f.vt_link %} <a class="link text-xs" href="{{ f.vt_link }}">VT</a>{% endif %}
