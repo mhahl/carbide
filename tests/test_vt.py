@@ -8,7 +8,8 @@ from carbide.common.blobstore import BlobStore
 from carbide.common.config import validate
 from carbide.server.vt import (VTAuthError, VTClient, VTError, VTQueue,
                                VTQuotaExceeded, build_client, resolve_vt_key,
-                               summarize_analysis, summarize_file)
+                               summarize_analysis, summarize_file,
+                               summarize_url, url_id)
 from tests.fakes import FakeTransport
 from tests.pgcluster import PgCluster, postgres_available
 
@@ -86,6 +87,17 @@ class SummarizeTest(unittest.TestCase):
         self.assertEqual((out["status"], out["harmless"]), ("clean", 65))
         self.assertEqual(out["detections"], [])
 
+    def test_url_id_and_summary(self):
+        self.assertEqual(url_id("http://x/"), "aHR0cDovL3gv")
+        self.assertNotIn("=", url_id("http://example.com/"))
+        out = summarize_url(FILE_BODY, "http://x/evil.exe")
+        self.assertEqual((out["status"], out["malicious"]), ("malicious", 2))
+        self.assertEqual(
+            out["permalink"],
+            "https://www.virustotal.com/gui/url/"
+            + url_id("http://x/evil.exe"))
+        self.assertEqual(out["url"], "http://x/evil.exe")
+
 
 class ClientTest(unittest.IsolatedAsyncioTestCase):
     async def test_lookup_hit_and_miss(self):
@@ -95,6 +107,20 @@ class ClientTest(unittest.IsolatedAsyncioTestCase):
         out = await client.lookup("abc")
         self.assertEqual(out["status"], "malicious")
         self.assertIsNone(await client.lookup("missing"))
+
+    async def test_url_lookup_and_submit(self):
+        transport = FakeTransport()
+        transport.get_responses["/urls/" + url_id("http://k/")] = (
+            200, FILE_BODY, {})
+        client = make_client(transport)
+        out = await client.lookup_url("http://k/")
+        self.assertEqual(out["status"], "malicious")
+        self.assertIn("/gui/url/", out["permalink"])
+        self.assertIsNone(await client.lookup_url("http://new/"))
+        analysis_id = await client.submit_url("http://new/")
+        self.assertEqual(analysis_id, "an-url-1")
+        self.assertIn(("FORM", "/urls", {"url": "http://new/"}),
+                      transport.calls)
 
     async def test_lookup_auth_error(self):
         transport = FakeTransport()
@@ -162,7 +188,14 @@ class FakeClient:
         self.uploads.append((len(data), filename))
         return self.analysis_id
 
-    async def poll_analysis(self, analysis_id, sha):
+    async def lookup_url(self, url):
+        return self.lookups.get("url:" + url)
+
+    async def submit_url(self, url):
+        self.uploads.append((0, url))
+        return self.analysis_id
+
+    async def poll_analysis(self, analysis_id, sha, permalink=""):
         return self.polls.get(analysis_id, (False, None))
 
 
@@ -241,6 +274,24 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
             await self.db.get_vt_scan(sensor_ref.sha256))
         self.assertIsNone(await self.db.get_vt_scan(foren_ref.sha256))
         self.assertEqual(len(self.client.uploads), 1)
+
+    async def test_scan_url_submit_then_poll(self):
+        row = await self.queue.scan_url("http://evil/x")
+        self.assertEqual(row["status"], "pending")
+        self.assertEqual(len(self.client.uploads), 1)
+        # Worker pass re-polls the pending URL (no file candidates here).
+        self.assertEqual(await self.queue.run_once(), 1)
+        self.client.polls["an-1"] = (True, {
+            "status": "malicious", "malicious": 4, "suspicious": 0,
+            "harmless": 60, "undetected": 5,
+            "permalink": "https://www.virustotal.com/gui/url/abc",
+            "detections": []})
+        self.assertEqual(await self.queue.run_once(), 1)
+        row = await self.db.get_vt_url_scan("http://evil/x")
+        self.assertEqual((row["status"], row["malicious"]),
+                         ("malicious", 4))
+        self.assertEqual(len(self.client.uploads), 1)
+        self.assertEqual(await self.queue.run_once(), 0)
 
     async def test_oversize_and_missing_blob(self):
         big = "b" * 64

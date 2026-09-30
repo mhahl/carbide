@@ -133,10 +133,10 @@
 </div>
 {% if hits %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col" class="text-right" data-sort-type="number">Bytes</th><th scope="col">MIME</th></tr></thead>
+<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col" class="text-right" data-sort-type="number">Bytes</th><th scope="col">MIME</th><th scope="col">VT</th><th scope="col" data-sort="off"><span class="sr-only">Scan</span></th></tr></thead>
 <tbody>
 {% for h in hits %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums" data-sort-value="{{ h.size }}">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{% if h.vt_link %}<a class="link" href="{{ h.vt_link }}">{{ h.url }}</a>{% else %}{{ h.url }}{% endif %}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums" data-sort-value="{{ h.size }}">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td><td>{% set f = h %}{% include "_verdict.html" %}</td><td>{% if not h.vt or h.vt == "error" %}<button class="btn btn-xs btn-ghost" hx-post="/actions/squid/{{ h.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}

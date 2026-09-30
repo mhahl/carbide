@@ -110,6 +110,8 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_post("/actions/snapshots", actions.snapshot_now)
     app.router.add_post("/actions/sessions/{id}/kill",
                         actions.session_kill)
+    app.router.add_post("/actions/squid/{id}/scan",
+                        actions.squid_scan)
     app.router.add_post("/sensors/save", actions.sensor_save)
     app.router.add_post("/sensors/{id}/delete", actions.sensor_delete)
     app.router.add_post("/actions/sensors/{id}/push",
@@ -133,6 +135,12 @@ def create_app(deps: dict) -> web.Application:
                         actions.honey_image_clear)
     app.router.add_post("/settings/honeypot/image/pull",
                         actions.honey_image_pull)
+    app.router.add_post("/settings/forensics/prefixes",
+                        actions.forensics_prefixes_save)
+    app.router.add_post("/settings/forensics/prefixes/reset",
+                        actions.forensics_prefixes_reset)
+    app.router.add_post("/settings/sessions/clear",
+                        actions.sessions_clear)
     app.router.add_static("/static",
                           os.path.join(HERE, "static"),
                           name="static")

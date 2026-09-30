@@ -5,7 +5,8 @@ import unittest
 from carbide.common.blobstore import BlobStore
 from carbide.common.config import validate
 from carbide.server.forensics import (
-    Forensics, is_text, normalize_changes, unified_diff_text,
+    VOLATILE_PREFIXES, Forensics, is_text, is_volatile,
+    normalize_changes, parse_prefixes, unified_diff_text,
 )
 from tests.fakes import FakeDatabase, FakePodman
 
@@ -45,6 +46,66 @@ class NormalizeTest(unittest.TestCase):
         rows, warnings = normalize_changes([{"Path": "/x", "Kind": 9}])
         self.assertEqual(rows, [("/x", "changed")])
         self.assertEqual(len(warnings), 1)
+
+    def test_volatile_prefixes(self):
+        for path in ("/var/lib/mysql/ibdata1", "/var/lib/mysql",
+                     "/var/log/mysqld.log", "/run/mysqld/mysqld.sock",
+                     "/var/log/httpd/access_log", "/run/httpd/httpd.pid",
+                     "/var/cache/httpd/x", "/etc/shadow", "/etc/shadow-",
+                     "/etc/ssh/sshd_config",
+                     "/etc/ssh/ssh_host_rsa_key",
+                     "/etc/ssh/ssh_host_ed25519_key.pub",
+                     "/run/sshd.pid"):
+            self.assertTrue(is_volatile(path), path)
+        for path in ("/var/lib/mysqlx", "/etc/passwd", "/etc/group",
+                     "/etc/gshadow", "/tmp/tool", "/var/log/messages",
+                     "/etc/ssh/ssh_config", "/etc/ssh/sshrc",
+                     "/run/sshd", "/etc/shadow.bak"):
+            self.assertFalse(is_volatile(path), path)
+
+    def test_boot_diff_leaves_parent_dirs_only(self):
+        # Observed container-start diff: entrypoint + services rewrite
+        # these on every boot, so all but the bare parent-directory
+        # entries must filter out. (Full mysql flood abbreviated: one
+        # prefix covers the whole subtree.)
+        boot = [
+            "/etc", "/etc/shadow", "/etc/shadow-", "/etc/ssh",
+            "/etc/ssh/sshd_config",
+            "/etc/ssh/ssh_host_ecdsa_key",
+            "/etc/ssh/ssh_host_ecdsa_key.pub",
+            "/etc/ssh/ssh_host_ed25519_key",
+            "/etc/ssh/ssh_host_ed25519_key.pub",
+            "/etc/ssh/ssh_host_rsa_key",
+            "/etc/ssh/ssh_host_rsa_key.pub",
+            "/run/httpd", "/run/httpd/httpd.pid",
+            "/run/mysqld", "/run/mysqld/mysqld.pid",
+            "/run/mysqld/mysqlx.sock", "/run/mysqld/mysqlx.sock.lock",
+            "/run/sshd.pid", "/tmp", "/var", "/var/lib",
+            "/var/lib/mysql", "/var/lib/mysql/auto.cnf",
+            "/var/lib/mysql/binlog.000001",
+            "/var/lib/mysql/.carbide-seeded",
+            "/var/lib/mysql/#innodb_redo/#ib_redo5",
+            "/var/lib/mysql/mysql.sock",
+            "/var/lib/mysql/wordpress/wp_users.ibd",
+            "/var/log", "/var/log/httpd", "/var/log/httpd/access_log",
+            "/var/log/httpd/error_log", "/var/log/mysqld.log",
+        ]
+        survivors = [p for p in boot if not is_volatile(p)]
+        # Bare parent dirs have no excludable form (a "/etc" prefix
+        # would swallow /etc/passwd too); they render as one-line
+        # "(directory)" entries.
+        self.assertEqual(sorted(survivors),
+                         ["/etc", "/etc/ssh", "/tmp", "/var", "/var/lib",
+                          "/var/log"])
+
+    def test_parse_prefixes(self):
+        self.assertIsNone(parse_prefixes(None))
+        self.assertIsNone(parse_prefixes(""))
+        self.assertIsNone(parse_prefixes("not json"))
+        self.assertIsNone(parse_prefixes("[]"))
+        self.assertIsNone(parse_prefixes('["ok", "nope"]'))
+        self.assertIsNone(parse_prefixes('{"a": 1}'))
+        self.assertEqual(parse_prefixes('["/a", "/b/c"]'), ("/a", "/b/c"))
 
     def test_garbage_entry_warns(self):
         rows, warnings = normalize_changes([{"nope": 1}])
@@ -114,6 +175,49 @@ class ForensicsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.pod.images), 1)
         snaps = await self.db.list_snapshots("s1", "1.2.3.4")
         self.assertEqual(len(snaps), 1)
+
+    async def test_volatile_service_files_skipped(self):
+        self.pod.write_file(self.cid, "/var/lib/mysql/ibdata1", b"db")
+        self.pod.write_file(self.cid, "/var/log/httpd/access_log",
+                            b"GET /")
+        self.pod.write_file(self.cid, "/tmp/tool", b"evil")
+        summary = await self.forensics.collect(
+            sensor_id="s1", attacker_ip="1.2.3.4", session_id="s",
+            container_id=self.cid)
+        self.assertEqual(summary["changes"], 1)
+        self.assertTrue(any("volatile service paths skipped" in w
+                            for w in summary["warnings"]))
+        rows = await self.db.get_diff_rows("s")
+        self.assertEqual(rows, [("/tmp/tool", "added")])
+        md, _js = await self.db.get_report("s")
+        self.assertIn("[A] /tmp/tool", md)
+        self.assertNotIn("ibdata1", md)
+        self.assertNotIn("access_log", md)
+        names = [f[1] for f in self.db.files]
+        self.assertNotIn("container:/var/lib/mysql/ibdata1", names)
+
+    async def test_console_prefix_override(self):
+        from carbide.server.forensics import VOLATILE_SETTING
+        self.assertEqual(
+            await self.forensics.effective_prefixes(),
+            VOLATILE_PREFIXES)
+        await self.db.set_setting(
+            VOLATILE_SETTING, '["/tmp", "/var/log/httpd"]')
+        self.assertEqual(await self.forensics.effective_prefixes(),
+                         ("/tmp", "/var/log/httpd"))
+        self.pod.write_file(self.cid, "/tmp/tool", b"evil")
+        self.pod.write_file(self.cid, "/var/lib/mysql/ib", b"db")
+        summary = await self.forensics.collect(
+            sensor_id="s1", attacker_ip="1.2.3.4", session_id="s",
+            container_id=self.cid)
+        self.assertEqual(summary["changes"], 1)
+        rows = await self.db.get_diff_rows("s")
+        self.assertEqual(rows, [("/var/lib/mysql/ib", "added")])
+        # Invalid override falls back to the shipped defaults.
+        await self.db.set_setting(VOLATILE_SETTING, "garbage")
+        self.assertEqual(
+            await self.forensics.effective_prefixes(),
+            VOLATILE_PREFIXES)
 
     async def test_snapshot_tag_is_valid_reference(self):
         # Registry references must be lowercase with no dots that could

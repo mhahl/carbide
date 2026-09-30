@@ -92,6 +92,25 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resp.status, 200)
         self.assertIn("CARBIDE CONSOLE", await resp.text())
 
+    async def test_dashboard_geo_ptr_and_layout(self):
+        await self._seed_session()
+        await self.db.save_ip_intel(
+            "9.9.9.9", rdns="ptr.example.com", country_code="NL",
+            country="Netherlands", city="Amsterdam", org="Example ISP")
+        await self.login()
+        body = await (await self.client.get("/")).text()
+        self.assertIn("NL · Amsterdam", body)
+        self.assertIn("Example ISP", body)
+        self.assertIn("ptr.example.com", body)
+        self.assertIn("<th scope=\"col\">Geo</th>", body)
+        self.assertIn("<th scope=\"col\">PTR</th>", body)
+        # Recent sessions full-width on top, live sensors below it.
+        self.assertIn(
+            '<section class="card card-border bg-base-100" '
+            'aria-label="Recent sessions">', body)
+        self.assertLess(body.index('aria-label="Recent sessions"'),
+                        body.index('aria-label="Live sensors"'))
+
     async def test_wireframe_theme_and_active_nav(self):
         await self.login()
         body = await (await self.client.get("/")).text()
@@ -294,6 +313,72 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.db.get_setting("honeypot.image"))
         body = await (await self.client.get("/settings")).text()
         self.assertNotIn("Clear console image", body)
+
+    async def test_forensics_prefixes_settings(self):
+        await self.login()
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("Forensic diff exclusions", body)
+        self.assertIn("defaults", body)
+        resp = await self.client.post(
+            "/settings/forensics/prefixes", data={"prefixes": "/a\n/b\n"},
+            allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("notice=", resp.headers["Location"])
+        self.assertEqual(
+            await self.db.get_setting("forensics.volatile_prefixes"),
+            '["/a", "/b"]')
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("2 prefixes · console", body)
+        resp = await self.client.post(
+            "/settings/forensics/prefixes", data={"prefixes": "nope"},
+            allow_redirects=False)
+        self.assertIn("error=", resp.headers["Location"])
+        resp = await self.client.post(
+            "/settings/forensics/prefixes/reset", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIsNone(
+            await self.db.get_setting("forensics.volatile_prefixes"))
+
+    async def test_sessions_clear(self):
+        await self._seed_session()
+        self.assertTrue(await self.db.list_sessions())
+        await self.login()
+        resp = await self.client.post(
+            "/settings/sessions/clear", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("cleared+1+sessions", resp.headers["Location"])
+        self.assertEqual(await self.db.list_sessions(), [])
+        self.assertEqual(
+            await self.db.list_squid_hits(session_id="sess1"), [])
+        # Console user survives the wipe.
+        self.assertIsNotNone(
+            await self.db.get_web_user_by_name("admin"))
+
+    async def test_squid_url_scan(self):
+        await self._seed_session()
+        await self.db.set_setting("virustotal.api_key", "k" * 64)
+        await self.login()
+        body = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn("/actions/squid/0/scan", body)
+        self.assertIn("unscanned", body)
+        resp = await self.client.post("/actions/squid/0/scan")
+        text = await resp.text()
+        self.assertIn("submitted", text)
+        row = await self.db.get_vt_url_scan("http://example.com/")
+        self.assertEqual(row["status"], "pending")
+        resp = await self.client.post("/actions/squid/0/scan")
+        self.assertIn("awaiting verdict", await resp.text())
+        await self.db.save_vt_url_scan(
+            "http://example.com/", "malicious", malicious=5,
+            permalink="https://www.virustotal.com/gui/url/abc")
+        body = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn("malicious", body)
+        self.assertIn(
+            'href="https://www.virustotal.com/gui/url/abc"'
+            ">http://example.com/</a>", body)
+        self.assertNotIn("/actions/squid/0/scan", body)
+        resp = await self.client.post("/actions/squid/999/scan")
+        self.assertIn("no such squid hit", await resp.text())
 
     async def test_server_side_sorting(self):
         await self.db.ensure_session("sa", "s1", "1.1.1.1")

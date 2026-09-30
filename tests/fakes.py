@@ -31,6 +31,7 @@ class FakeDatabase:
         self.squid = []
         self.applied = set()
         self.vt_scans = {}
+        self.vt_urls = {}
         self.intel = {}
         self.settings = {}
         self.vt_quota = {}
@@ -278,6 +279,15 @@ class FakeDatabase:
         rows.reverse()
         return rows[offset:offset + limit]
 
+    async def get_squid_hit(self, hit_id):
+        try:
+            idx = int(hit_id)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= idx < len(self.squid):
+            return (idx,) + self.squid[idx]
+        return None
+
     async def list_snapshots_all(self, sensor_id=None, limit=200):
         rows = [(s, i, c, img, at)
                 for img, at, s, i, c in self.snapshots
@@ -391,6 +401,25 @@ class FakeDatabase:
     async def delete_managed_sensor(self, sensor_id):
         getattr(self, "managed", {}).pop(sensor_id, None)
 
+    async def clear_sessions(self):
+        counts = {
+            "transcripts": len(self.transcripts),
+            "session_files": len(self.files),
+            "auth_attempts": len(self.attempts),
+            "diffs": len(self.diffs),
+            "reports": len(self.reports),
+            "squid_hits": len(self.squid),
+            "sessions": len(self.sessions),
+        }
+        self.transcripts.clear()
+        self.files.clear()
+        self.attempts.clear()
+        self.diffs.clear()
+        self.reports.clear()
+        self.squid.clear()
+        self.sessions.clear()
+        return counts
+
     async def get_setting(self, key):
         return self.settings.get(key)
 
@@ -428,16 +457,46 @@ class FakeDatabase:
             "report_json": report_json, "analysis_id": analysis_id,
             "error": error, "scanned_at": utcnow(), "updated_at": utcnow()}
 
+    async def get_vt_url_scan(self, url):
+        row = self.vt_urls.get(url)
+        return dict(row) if row else None
+
+    async def get_vt_url_scans(self, urls):
+        return {u: dict(self.vt_urls[u]) for u in dict.fromkeys(urls)
+                if u and u in self.vt_urls}
+
+    async def save_vt_url_scan(self, url, status, malicious=0,
+                               suspicious=0, harmless=0, undetected=0,
+                               permalink="", report_json="", analysis_id="",
+                               error=""):
+        self.vt_urls[url] = {
+            "url": url, "status": status, "malicious": malicious,
+            "suspicious": suspicious, "harmless": harmless,
+            "undetected": undetected, "permalink": permalink,
+            "report_json": report_json, "analysis_id": analysis_id,
+            "error": error, "scanned_at": utcnow(), "updated_at": utcnow()}
+
+    async def pending_vt_urls(self, limit):
+        rows = [(u, r["analysis_id"]) for u, r in self.vt_urls.items()
+                if r["status"] == "pending" and r["analysis_id"]]
+        return rows[:limit]
+
     async def get_ip_intel(self, ip):
         row = self.intel.get(ip)
         return dict(row) if row else None
 
     async def save_ip_intel(self, ip, rdns="", status="ok", open_ports="[]",
-                            raw_xml="", error=""):
+                            raw_xml="", error="", country_code="",
+                            country="", city="", org=""):
         self.intel[ip] = {
             "attacker_ip": ip, "rdns": rdns, "status": status,
             "open_ports": open_ports, "raw_xml": raw_xml, "error": error,
-            "scanned_at": utcnow()}
+            "scanned_at": utcnow(), "country_code": country_code,
+            "country": country, "city": city, "org": org}
+
+    async def get_ip_intel_many(self, ips):
+        return {i: dict(self.intel[i]) for i in dict.fromkeys(ips)
+                if i and i in self.intel}
 
     _ATTACKER_SORT_KEYS = {
         "attacker_ip": lambda r: r[0],
@@ -500,6 +559,7 @@ class FakeTransport:
         self.calls = []
         self.get_responses = {}
         self.post_responses = []  # popped per upload, else default
+        self.form_responses = []  # popped per url submit, else default
 
     async def get(self, path):
         self.calls.append(("GET", path))
@@ -510,6 +570,12 @@ class FakeTransport:
         if self.post_responses:
             return self.post_responses.pop(0)
         return (200, {"data": {"id": "an-1"}}, {})
+
+    async def post_form(self, path, fields):
+        self.calls.append(("FORM", path, dict(fields)))
+        if self.form_responses:
+            return self.form_responses.pop(0)
+        return (200, {"data": {"id": "an-url-1"}}, {})
 
 
 class _FakeContainer:

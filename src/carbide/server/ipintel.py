@@ -3,6 +3,9 @@
 One scan per IP per cache TTL, serialized, with a timeout. Results land
 in ip_intel for the console attacker view. The default profile is a
 connect scan (no raw sockets, no container capabilities needed).
+Geolocation comes from the free ip-api.com endpoint (no key, 45/min —
+one request per IP per TTL keeps a honeypot far under it), skipped for
+private addresses and disableable via [ipintel] geo_enabled.
 """
 import asyncio
 import ipaddress
@@ -11,9 +14,13 @@ import logging
 import socket
 import xml.etree.ElementTree as ET
 
+import aiohttp
+
 log = logging.getLogger("carbide.server.ipintel")
 
 _MAX_RAW_XML = 256 * 1024
+_GEO_URL = "http://ip-api.com/json/{ip}?fields=status,country,countryCode,city,org,query"
+_GEO_TIMEOUT_S = 10.0
 
 
 class IPIntelError(Exception):
@@ -86,18 +93,55 @@ async def default_resolver(ip: str) -> str:
         return ""
 
 
+async def default_geo_lookup(ip: str) -> dict:
+    """{country_code, country, city, org} for one public IP, else {}.
+
+    Fail-soft by design: timeouts, HTTP errors, and non-success API
+    answers all yield {} so a dead geo service never fails the pass.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return {}
+    if addr.is_private or addr.is_loopback or addr.is_link_local \
+            or addr.is_multicast or addr.is_reserved:
+        return {}
+    try:
+        timeout = aiohttp.ClientTimeout(total=_GEO_TIMEOUT_S)
+        async with aiohttp.ClientSession(timeout=timeout) as sess:
+            async with sess.get(_GEO_URL.format(ip=ip)) as resp:
+                if resp.status != 200:
+                    return {}
+                try:
+                    body = await resp.json()
+                except Exception:
+                    return {}
+    except Exception:
+        return {}
+    if not isinstance(body, dict) or body.get("status") != "success":
+        return {}
+    return {
+        "country_code": str(body.get("countryCode") or ""),
+        "country": str(body.get("country") or ""),
+        "city": str(body.get("city") or ""),
+        "org": str(body.get("org") or ""),
+    }
+
+
 class IPIntel:
     def __init__(self, db, cfg, interval_s: float = 300.0, batch: int = 10,
-                 runner=None, resolver=None):
+                 runner=None, resolver=None, geo=None):
         self._db = db
         self._args = list(cfg.get("ipintel.nmap_args",
                                   ["-sT", "--top-ports", "1000"]))
         self._cache_days = cfg.get("ipintel.cache_days", 7)
         self._timeout = cfg.get("ipintel.timeout_s", 300.0)
+        self._geo_enabled = cfg.get("ipintel.geo_enabled", True)
         self._interval = interval_s
         self._batch = batch
         self._runner = runner or default_runner
         self._resolver = resolver or default_resolver
+        self._geo = geo or default_geo_lookup
 
     async def run_forever(self):
         log.info("ipintel started (pass every %ss)", self._interval)
@@ -136,6 +180,7 @@ class IPIntel:
 
     async def _scan_one(self, ip: str):
         rdns = await self._resolver(ip)
+        geo = await self._geo(ip) if self._geo_enabled else {}
         code, out, err = await self._runner(self._args, ip, self._timeout)
         text = out.decode("utf-8", "replace")
         if code != 0:
@@ -144,8 +189,18 @@ class IPIntel:
             hint = ""
             if "raw socket" in last.lower():
                 hint = " (server container needs NET_RAW; re-run setup.sh)"
-            raise IPIntelError(f"nmap exit {code}: {last}{hint}" if last
-                               else f"nmap exit {code}{hint}")
+            # nmap failed, but rdns + geo are still worth keeping:
+            # save here and return so run_once doesn't overwrite them
+            # with a bare error row.
+            error = (f"nmap exit {code}: {last}{hint}" if last
+                     else f"nmap exit {code}{hint}")[:500]
+            await self._db.save_ip_intel(
+                ip, rdns=rdns, status="error", error=error,
+                country_code=geo.get("country_code", ""),
+                country=geo.get("country", ""),
+                city=geo.get("city", ""), org=geo.get("org", ""))
+            log.warning("ipintel %s failed: %s", ip, error)
+            return
         try:
             parsed = parse_nmap_xml(text)
         except ET.ParseError as exc:
@@ -155,5 +210,8 @@ class IPIntel:
         await self._db.save_ip_intel(
             ip, rdns=rdns, status="ok",
             open_ports=json.dumps(parsed["ports"]),
-            raw_xml=text[:_MAX_RAW_XML])
+            raw_xml=text[:_MAX_RAW_XML],
+            country_code=geo.get("country_code", ""),
+            country=geo.get("country", ""),
+            city=geo.get("city", ""), org=geo.get("org", ""))
         log.info("ipintel %s: %d open ports", ip, len(parsed["ports"]))

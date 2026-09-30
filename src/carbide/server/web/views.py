@@ -139,8 +139,7 @@ async def dashboard(request):
         "auth_24h": await db.count_auth_since(day_ago),
         "containers_running": running,
         "podman_ok": pods is not None,
-        "recent": [_srow(t) for t in
-                   await db.list_sessions(limit=10)],
+        "recent": await _recent_with_intel(db),
         "auth": [dict(zip(
             ("id", "session_id", "sensor_id", "username", "password",
              "accepted", "matched", "at"), t))
@@ -213,6 +212,12 @@ async def session_detail(request):
         ("id", "session_id", "sensor_id", "container_ip", "at",
          "method", "url", "status", "size", "mime"), t))
         for t in await db.list_squid_hits(session_id=sid, limit=500)]
+    url_verdicts = await db.get_vt_url_scans([h["url"] for h in hits])
+    for h in hits:
+        vt = url_verdicts.get(h["url"])
+        h["vt"] = vt["status"] if vt else ""
+        h["vt_malicious"] = vt["malicious"] if vt else 0
+        h["vt_link"] = vt["permalink"] if vt else ""
     diffs = [{"path": p, "kind": k}
              for p, k in await db.get_diff_rows(sid)]
     report = await db.get_report(sid)
@@ -557,6 +562,7 @@ async def users_view(request):
 async def settings_view(request):
     from ..vt import VT_KEY_SETTING
     from ..pool import HONEY_IMAGE_SETTING, same_image_ref
+    from ..forensics import VOLATILE_SETTING, parse_prefixes
     db = request.app["db"]
     cfg = request.app["cfg"]
     stored = await db.get_setting(VT_KEY_SETTING)
@@ -584,6 +590,13 @@ async def settings_view(request):
             same_image_ref(t, honey_effective) for t in tags)
     except Exception as exc:
         log.warning("honeypot image presence check failed: %s", exc)
+    raw_prefixes = await db.get_setting(VOLATILE_SETTING)
+    parsed_prefixes = parse_prefixes(raw_prefixes)
+    if parsed_prefixes is not None:
+        prefix_source, prefix_list = "console", parsed_prefixes
+    else:
+        from ..forensics import VOLATILE_PREFIXES
+        prefix_source, prefix_list = "defaults", VOLATILE_PREFIXES
     today = datetime.datetime.now(datetime.timezone.utc).date()
     return render(request, "settings.html", {
         "vt_source": source, "vt_masked": masked, "vt_active": active,
@@ -594,6 +607,10 @@ async def settings_view(request):
         "honey_source": honey_source, "honey_effective": honey_effective,
         "honey_console_set": honey_console_set,
         "honey_present": honey_present,
+        "prefix_source": prefix_source,
+        "prefix_text": "\n".join(prefix_list),
+        "prefix_count": len(prefix_list),
+        "prefix_console_set": parsed_prefixes is not None,
         "error": request.query.get("error") or "",
         "notice": request.query.get("notice") or ""})
 
@@ -615,11 +632,30 @@ async def frag_sensors(request):
                   {"managed": managed, "live": live, "seen": seen})
 
 
+async def _recent_with_intel(db, limit=10):
+    """Recent sessions enriched with cached geo + PTR per attacker IP."""
+    rows = [_srow(t) for t in await db.list_sessions(limit=limit)]
+    ips = [r["attacker_ip"] for r in rows]
+    intel = await db.get_ip_intel_many(ips)
+    for row in rows:
+        info = intel.get(row["attacker_ip"]) or {}
+        code = info.get("country_code") or ""
+        city = info.get("city") or ""
+        if code and city:
+            geo = f"{code} · {city}"
+        else:
+            geo = code or city
+        row["geo"] = geo
+        row["geo_org"] = info.get("org") or ""
+        row["geo_country"] = info.get("country") or ""
+        row["rdns"] = info.get("rdns") or ""
+    return rows
+
+
 @require_auth
 async def frag_recent_sessions(request):
-    rows = await request.app["db"].list_sessions(limit=10)
-    return render(request, "_recent_sessions.html",
-                  {"recent": [_srow(t) for t in rows]})
+    rows = await _recent_with_intel(request.app["db"])
+    return render(request, "_recent_sessions.html", {"recent": rows})
 
 
 @require_auth

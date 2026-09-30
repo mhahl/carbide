@@ -125,6 +125,56 @@ async def session_kill(request):
     return _alert(request, True, f"kill sent for session {sid}")
 
 
+@require_auth
+async def squid_scan(request):
+    from ..vt import (VTAuthError, VTError, VTQuotaExceeded, VTQueue,
+                      build_client, resolve_vt_key)
+    user = request["user"]["username"]
+    db = request.app["db"]
+    cfg = request.app["cfg"]
+    try:
+        hit_id = int(request.match_info["id"])
+    except ValueError:
+        return _alert(request, False, "bad hit id")
+    hit = await db.get_squid_hit(hit_id)
+    if hit is None:
+        return _alert(request, False, "no such squid hit")
+    url = hit[6]
+    if not url or len(url) > 2048 or not url.startswith(
+            ("http://", "https://")):
+        return _alert(request, False, "hit has no scannable url")
+    existing = await db.get_vt_url_scan(url)
+    if existing is not None and existing["status"] in (
+            "malicious", "suspicious", "clean"):
+        return _alert(request, True,
+                      f"already scanned: {existing['status']}")
+    if existing is not None and existing["status"] == "pending":
+        return _alert(request, True,
+                      "already submitted, awaiting verdict")
+    key = await resolve_vt_key(db, cfg)
+    if not key:
+        return _alert(request, False, "no api key set")
+    client = build_client(
+        cfg, db, transport=request.app.get("vt_transport"), api_key=key)
+    queue = VTQueue(db, request.app["blobs"], cfg, client=client)
+    try:
+        row = await queue.scan_url(url)
+    except VTAuthError:
+        log.info("console %s: url scan key rejected", user)
+        return _alert(request, False, "key rejected 401")
+    except VTQuotaExceeded:
+        return _alert(request, False, "daily quota exhausted")
+    except VTError as exc:
+        log.warning("console %s: url scan failed: %s", user, exc)
+        return _alert(request, False, f"scan failed: {exc}")
+    log.info("console %s: scanned url %.60s: %s", user, url,
+             row["status"])
+    if row["status"] == "pending":
+        return _alert(request, True,
+                      "submitted; verdict lands next worker pass")
+    return _alert(request, True, f"verdict: {row['status']}")
+
+
 # -- managed sensors -------------------------------------------------------------
 def _sensor_form(form) -> tuple:
     """Returns (record dict, error). Record holds DB-ready values."""
@@ -481,3 +531,50 @@ async def honey_image_pull(request):
             f"pull failed: {exc}"))
     log.info("console %s: pulled honeypot image %s", user, ref)
     raise web.HTTPFound("/settings?notice=" + quote(f"pulled {ref}"))
+
+
+@require_auth
+async def forensics_prefixes_save(request):
+    import json as _json
+    from ..forensics import VOLATILE_SETTING
+    form = await request.post()
+    user = request["user"]["username"]
+    lines = [(ln.strip()) for ln in
+             (form.get("prefixes") or "").splitlines()]
+    prefixes = [ln for ln in lines if ln]
+    for prefix in prefixes:
+        if (not prefix.startswith("/") or len(prefix) > 256
+                or any(ch.isspace() for ch in prefix)):
+            raise web.HTTPFound("/settings?error=" + quote(
+                f"bad prefix {prefix!r}: must start with /"))
+    db = request.app["db"]
+    if not prefixes:
+        await db.delete_setting(VOLATILE_SETTING)
+        log.info("console %s: reset forensic exclusions to defaults",
+                 user)
+        raise web.HTTPFound("/settings?notice=exclusions+reset")
+    await db.set_setting(VOLATILE_SETTING, _json.dumps(prefixes))
+    log.info("console %s: saved %d forensic exclusion prefixes",
+             user, len(prefixes))
+    raise web.HTTPFound("/settings?notice=exclusions+saved")
+
+
+@require_auth
+async def sessions_clear(request):
+    user = request["user"]["username"]
+    counts = await request.app["db"].clear_sessions()
+    total = sum(counts.values())
+    log.info("console %s: cleared sessions (%d rows: %s)", user, total,
+             ", ".join(f"{t}={c}" for t, c in sorted(counts.items())
+                       if c))
+    raise web.HTTPFound(
+        f"/settings?notice=cleared+{counts.get('sessions', 0)}+sessions")
+
+
+@require_auth
+async def forensics_prefixes_reset(request):
+    from ..forensics import VOLATILE_SETTING
+    user = request["user"]["username"]
+    await request.app["db"].delete_setting(VOLATILE_SETTING)
+    log.info("console %s: reset forensic exclusions to defaults", user)
+    raise web.HTTPFound("/settings?notice=exclusions+reset")

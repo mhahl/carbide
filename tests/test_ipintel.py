@@ -1,10 +1,13 @@
 """Tests for carbide.server.ipintel (fake runner; PgCluster for queue)."""
 import unittest
 import xml.etree.ElementTree as ET
+from unittest import mock
 
 from carbide.common.config import validate
 from carbide.server.db import Database
-from carbide.server.ipintel import IPIntel, IPIntelError, parse_nmap_xml
+from carbide.server import ipintel as ipintel_mod
+from carbide.server.ipintel import (IPIntel, IPIntelError,
+                                    default_geo_lookup, parse_nmap_xml)
 from tests.pgcluster import PgCluster, postgres_available
 
 requires_pg = unittest.skipUnless(postgres_available(),
@@ -76,9 +79,15 @@ class IntelQueueTest(unittest.IsolatedAsyncioTestCase):
         async def resolver(ip):
             return "ptr.example.com"
 
+        async def geo(ip):
+            self.geo_calls.append(ip)
+            return dict(self.geo_result)
+
+        self.geo_calls = []
+        self.geo_result = {}
         self.result = (0, NMAP_XML.encode(), b"")
         self.intel = IPIntel(self.db, make_cfg(), runner=runner,
-                             resolver=resolver)
+                             resolver=resolver, geo=geo)
 
     async def asyncTearDown(self):
         import asyncio
@@ -133,7 +142,79 @@ class IntelQueueTest(unittest.IsolatedAsyncioTestCase):
 
         self.intel._runner = missing
         self.assertEqual(await self.intel.run_once(), 0)
-        self.assertIsNone(await self.db.get_ip_intel("1.2.3.4"))
+
+    async def test_geo_saved_with_scan(self):
+        await self.db.ensure_session("s1", "s1", "1.2.3.4")
+        self.geo_result = {"country_code": "NL", "country": "Netherlands",
+                           "city": "Amsterdam", "org": "Example ISP"}
+        self.assertEqual(await self.intel.run_once(), 1)
+        self.assertEqual(self.geo_calls, ["1.2.3.4"])
+        row = await self.db.get_ip_intel("1.2.3.4")
+        self.assertEqual(row["status"], "ok")
+        self.assertEqual(
+            (row["country_code"], row["country"], row["city"], row["org"]),
+            ("NL", "Netherlands", "Amsterdam", "Example ISP"))
+
+    async def test_geo_and_rdns_kept_on_nmap_failure(self):
+        await self.db.ensure_session("s1", "s1", "5.6.7.8")
+        self.geo_result = {"country_code": "DE", "country": "Germany",
+                           "city": "Berlin", "org": "Example GmbH"}
+        self.result = (1, b"", b"FAIL: no route")
+        self.assertEqual(await self.intel.run_once(), 1)
+        row = await self.db.get_ip_intel("5.6.7.8")
+        self.assertEqual(row["status"], "error")
+        self.assertIn("nmap exit 1", row["error"])
+        self.assertEqual(row["rdns"], "ptr.example.com")
+        self.assertEqual(
+            (row["country_code"], row["city"]), ("DE", "Berlin"))
+
+    async def test_geo_disabled_skips_lookup(self):
+        await self.db.ensure_session("s1", "s1", "1.2.3.4")
+        cfg = make_cfg(ipintel={"geo_enabled": False})
+        intel = IPIntel(self.db, cfg, runner=self.intel._runner,
+                        resolver=self.intel._resolver,
+                        geo=self.intel._geo)
+        self.assertEqual(await intel.run_once(), 1)
+        self.assertEqual(self.geo_calls, [])
+        row = await self.db.get_ip_intel("1.2.3.4")
+        self.assertEqual(row["country_code"], "")
+
+
+class GeoLookupTest(unittest.IsolatedAsyncioTestCase):
+    async def test_private_and_invalid_skip_network(self):
+        for ip in ("10.0.0.1", "192.168.1.1", "127.0.0.1", "::1",
+                   "169.254.1.1", "224.0.0.1", "not-an-ip", ""):
+            self.assertEqual(await default_geo_lookup(ip), {}, ip)
+
+    async def test_http_success_and_fail(self):
+        from aiohttp import web
+
+        async def handler(request):
+            if request.match_info["ip"] == "9.9.9.9":
+                return web.json_response({
+                    "status": "success", "country": "Netherlands",
+                    "countryCode": "NL", "city": "Amsterdam",
+                    "org": "Example ISP", "query": "9.9.9.9"})
+            return web.json_response({"status": "fail",
+                                      "message": "reserved range"})
+
+        app = web.Application()
+        app.router.add_get("/json/{ip}", handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        self.addAsyncCleanup(runner.cleanup)
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        _host, port = runner.addresses[0]
+        with mock.patch.object(
+                ipintel_mod, "_GEO_URL",
+                f"http://127.0.0.1:{port}/json/{{ip}}"):
+            out = await default_geo_lookup("9.9.9.9")
+            self.assertEqual(
+                out, {"country_code": "NL", "country": "Netherlands",
+                      "city": "Amsterdam", "org": "Example ISP"})
+            self.assertEqual(
+                await default_geo_lookup("8.8.8.8"), {})
 
 
 if __name__ == "__main__":

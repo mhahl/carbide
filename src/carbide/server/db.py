@@ -182,6 +182,29 @@ MIGRATIONS = [
     ALTER TABLE managed_sensors ADD COLUMN IF NOT EXISTS image_tag TEXT
         NOT NULL DEFAULT 'latest';
     """),
+    (7, """
+    CREATE TABLE IF NOT EXISTS vt_url_scans (
+        url TEXT PRIMARY KEY,
+        status TEXT NOT NULL,
+        malicious INT DEFAULT 0,
+        suspicious INT DEFAULT 0,
+        harmless INT DEFAULT 0,
+        undetected INT DEFAULT 0,
+        permalink TEXT DEFAULT '',
+        report_json TEXT DEFAULT '',
+        analysis_id TEXT DEFAULT '',
+        error TEXT DEFAULT '',
+        scanned_at TIMESTAMPTZ DEFAULT now(),
+        updated_at TIMESTAMPTZ DEFAULT now());
+    """),
+    (8, """
+    ALTER TABLE ip_intel ADD COLUMN IF NOT EXISTS country_code TEXT
+        DEFAULT '';
+    ALTER TABLE ip_intel ADD COLUMN IF NOT EXISTS country TEXT
+        DEFAULT '';
+    ALTER TABLE ip_intel ADD COLUMN IF NOT EXISTS city TEXT DEFAULT '';
+    ALTER TABLE ip_intel ADD COLUMN IF NOT EXISTS org TEXT DEFAULT '';
+    """),
 ]
 
 
@@ -260,6 +283,30 @@ class Database:
                         f"TRUNCATE {quoted} RESTART IDENTITY CASCADE")
             await self._conn.commit()
             return tables
+
+    # Session-keyed evidence tables. clear_sessions() wipes these and
+    # nothing else: users, settings, VT caches, intel, affinities,
+    # snapshots, and sensor records survive. Blob bytes stay on disk
+    # (quota-capped store, same as reset()).
+    SESSION_TABLES = ("transcripts", "session_files", "auth_attempts",
+                      "diffs", "reports", "squid_hits", "sessions")
+
+    async def clear_sessions(self):
+        """Delete all sessions and their evidence (console action).
+
+        Returns per-table row counts. Live sessions re-insert rows on
+        their next event; containers and affinities are untouched.
+        """
+        counts = {}
+        async with self._lock:
+            self._guard()
+            async with self._conn.cursor() as cur:
+                for table in self.SESSION_TABLES:
+                    await cur.execute(
+                        f'DELETE FROM "{table}"')
+                    counts[table] = cur.rowcount
+            await self._conn.commit()
+        return counts
 
     async def _exec(self, sql, params=(), fetch=None):
         async with self._lock:
@@ -648,6 +695,13 @@ class Database:
             f"FROM squid_hits {where} ORDER BY id DESC LIMIT %s OFFSET %s",
             tuple(params), fetch="all")
 
+    async def get_squid_hit(self, hit_id: int):
+        row = await self._exec(
+            "SELECT id, session_id, sensor_id, container_ip, at, method, "
+            "url, status, bytes, mime "
+            "FROM squid_hits WHERE id = %s", (hit_id,), fetch="one")
+        return row
+
     async def list_snapshots_all(self, sensor_id=None, limit=200):
         if sensor_id:
             return await self._exec(
@@ -868,6 +922,64 @@ class Database:
             (sha, status, malicious, suspicious, harmless, undetected,
              permalink, report_json, analysis_id, error))
 
+    _VT_URL_COLS = ("url", "status", "malicious", "suspicious",
+                    "harmless", "undetected", "permalink", "report_json",
+                    "analysis_id", "error", "scanned_at", "updated_at")
+
+    @classmethod
+    def _vt_url_row(cls, row):
+        return dict(zip(cls._VT_URL_COLS, row))
+
+    async def get_vt_url_scan(self, url: str):
+        row = await self._exec(
+            "SELECT url, status, malicious, suspicious, harmless, "
+            "undetected, permalink, report_json, analysis_id, error, "
+            "scanned_at, updated_at FROM vt_url_scans WHERE url = %s",
+            (url,), fetch="one")
+        return self._vt_url_row(row) if row else None
+
+    async def get_vt_url_scans(self, urls) -> dict:
+        """Batch URL verdicts keyed by url (console hit lists)."""
+        urls = list(dict.fromkeys(u for u in urls if u))
+        if not urls:
+            return {}
+        rows = await self._exec(
+            "SELECT url, status, malicious, suspicious, harmless, "
+            "undetected, permalink, report_json, analysis_id, error, "
+            "scanned_at, updated_at FROM vt_url_scans "
+            "WHERE url = ANY(%s)",
+            (urls,), fetch="all")
+        return {row[0]: self._vt_url_row(row) for row in rows}
+
+    async def save_vt_url_scan(self, url: str, status: str,
+                               malicious: int = 0, suspicious: int = 0,
+                               harmless: int = 0, undetected: int = 0,
+                               permalink: str = "", report_json: str = "",
+                               analysis_id: str = "", error: str = ""):
+        await self._exec(
+            "INSERT INTO vt_url_scans (url, status, malicious, suspicious, "
+            "harmless, undetected, permalink, report_json, analysis_id, "
+            "error) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (url) DO UPDATE SET status = EXCLUDED.status, "
+            "malicious = EXCLUDED.malicious, "
+            "suspicious = EXCLUDED.suspicious, "
+            "harmless = EXCLUDED.harmless, "
+            "undetected = EXCLUDED.undetected, "
+            "permalink = EXCLUDED.permalink, "
+            "report_json = EXCLUDED.report_json, "
+            "analysis_id = EXCLUDED.analysis_id, "
+            "error = EXCLUDED.error, updated_at = now()",
+            (url, status, malicious, suspicious, harmless, undetected,
+             permalink, report_json, analysis_id, error))
+
+    async def pending_vt_urls(self, limit: int):
+        """Submitted URL analyses awaiting a poll (oldest first)."""
+        return await self._exec(
+            "SELECT url, analysis_id FROM vt_url_scans "
+            "WHERE status = 'pending' AND analysis_id <> '' "
+            "ORDER BY updated_at LIMIT %s",
+            (limit,), fetch="all")
+
     async def vt_candidates(self, limit: int, cutoff):
         """Sensor-captured files (scp/sftp evidence) never scanned;
         pending analyses (re-polled, never re-uploaded); and rows older
@@ -902,7 +1014,8 @@ class Database:
 
     # -- ip intel --------------------------------------------------------
     _INTEL_COLS = ("attacker_ip", "rdns", "status", "open_ports",
-                   "raw_xml", "error", "scanned_at")
+                   "raw_xml", "error", "scanned_at", "country_code",
+                   "country", "city", "org")
 
     @classmethod
     def _intel_row(cls, row):
@@ -911,21 +1024,40 @@ class Database:
     async def get_ip_intel(self, ip: str):
         row = await self._exec(
             "SELECT attacker_ip, rdns, status, open_ports, raw_xml, error, "
-            "scanned_at FROM ip_intel WHERE attacker_ip = %s", (ip,),
+            "scanned_at, country_code, country, city, org "
+            "FROM ip_intel WHERE attacker_ip = %s", (ip,),
             fetch="one")
         return self._intel_row(row) if row else None
 
+    async def get_ip_intel_many(self, ips) -> dict:
+        """Batch intel rows keyed by ip (console enrichment)."""
+        ips = list(dict.fromkeys(i for i in ips if i))
+        if not ips:
+            return {}
+        rows = await self._exec(
+            "SELECT attacker_ip, rdns, status, open_ports, raw_xml, error, "
+            "scanned_at, country_code, country, city, org "
+            "FROM ip_intel WHERE attacker_ip = ANY(%s)",
+            (ips,), fetch="all")
+        return {row[0]: self._intel_row(row) for row in rows}
+
     async def save_ip_intel(self, ip: str, rdns: str = "", status: str = "ok",
                             open_ports: str = "[]", raw_xml: str = "",
-                            error: str = ""):
+                            error: str = "", country_code: str = "",
+                            country: str = "", city: str = "",
+                            org: str = ""):
         await self._exec(
             "INSERT INTO ip_intel (attacker_ip, rdns, status, open_ports, "
-            "raw_xml, error) VALUES (%s,%s,%s,%s,%s,%s) "
+            "raw_xml, error, country_code, country, city, org) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (attacker_ip) DO UPDATE SET rdns = EXCLUDED.rdns, "
             "status = EXCLUDED.status, open_ports = EXCLUDED.open_ports, "
             "raw_xml = EXCLUDED.raw_xml, error = EXCLUDED.error, "
-            "scanned_at = now()",
-            (ip, rdns, status, open_ports, raw_xml, error))
+            "country_code = EXCLUDED.country_code, "
+            "country = EXCLUDED.country, city = EXCLUDED.city, "
+            "org = EXCLUDED.org, scanned_at = now()",
+            (ip, rdns, status, open_ports, raw_xml, error, country_code,
+             country, city, org))
 
     async def ips_needing_scan(self, limit: int, cutoff):
         """Attacker IPs seen in sessions with no (or stale) intel row."""

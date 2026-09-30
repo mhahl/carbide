@@ -58,5 +58,33 @@
 <p class="text-xs text-base-content/60">A console image overrides the config-file image for containers created after saving (hot spares and new affinity assignments); running containers keep their image until evicted, and the diff baseline rebuilds automatically. Saving does not pull — use Pull, or pull on the server host, before attackers arrive.</p>
 </div>
 </section>
+<section class="card card-border bg-base-100" aria-label="Forensic diff exclusions">
+<div class="card-body p-4 gap-3">
+<div class="flex flex-wrap items-center gap-2">
+<h2 class="font-medium">Forensic diff exclusions</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ prefix_count }} prefixes · {{ prefix_source }}</span>
+</div>
+<form method="post" action="/settings/forensics/prefixes" data-busy class="flex flex-col gap-2">
+<fieldset class="fieldset">
+<label class="label" for="f-prefixes">Volatile path prefixes (one per line)</label>
+<textarea id="f-prefixes" name="prefixes" rows="8" spellcheck="false" class="textarea w-full max-w-xl font-mono">{{ prefix_text }}</textarea>
+</fieldset>
+<div><button class="btn btn-sm" type="submit">Save exclusions</button></div>
+</form>
+{% if prefix_console_set %}<div><form method="post" action="/settings/forensics/prefixes/reset" data-busy class="inline"><button class="btn btn-sm btn-ghost" type="submit">Reset to defaults</button></form></div>{% endif %}
+<p class="text-xs text-base-content/60">Diff paths under these prefixes are skipped as service runtime state (mysql/httpd noise); the skipped count shows in each report. Applies to captures after saving. Blank lines ignored; clearing the box restores the shipped defaults.</p>
+</div>
+</section>
+<section class="card card-border bg-base-100" aria-label="Danger zone">
+<div class="card-body p-4 gap-3">
+<div class="flex flex-wrap items-center gap-2">
+<h2 class="font-medium">Danger zone</h2>
+</div>
+<div class="flex flex-wrap items-center gap-2">
+<form method="post" action="/settings/sessions/clear" class="inline" onsubmit="return confirm('Delete ALL sessions and their evidence (transcripts, files, auth attempts, diffs, reports, squid hits)? Users, settings, VT caches, and affinities are kept.')"><button class="btn btn-sm btn-error" type="submit">Clear all sessions</button></form>
+</div>
+<p class="text-xs text-base-content/60">Irreversible. Live attacker sessions re-insert rows on their next event; running containers and affinities are untouched.</p>
+</div>
+</section>
 </div>
 {% endblock %}

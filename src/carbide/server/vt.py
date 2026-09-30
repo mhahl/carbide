@@ -1,11 +1,12 @@
-"""VirusTotal v3 file verdicts: hash-first lookup, upload-on-miss, quota pacing.
+"""VirusTotal v3 file + URL verdicts: lookup-first, submit-on-miss, quota pacing.
 
 Public tier allows 4 requests/minute and 500/day, so every HTTP request
 passes the per-minute pacer and the persisted daily quota claim.
-Anything unknown is uploaded once and then polled by analysis id —
-pending rows resume polling on later passes, never re-upload.
+Anything unknown is submitted once and then polled by analysis id —
+pending rows resume polling on later passes, never re-submit.
 """
 import asyncio
+import base64
 import datetime
 import json
 import logging
@@ -44,7 +45,14 @@ def _verdict(malicious: int, suspicious: int, harmless: int,
     return "unknown"
 
 
-def _summary(stats: dict, results: dict, sha: str, extra: dict) -> dict:
+def url_id(url: str) -> str:
+    """VT url id: base64url of the URL without padding."""
+    return base64.urlsafe_b64encode(url.encode("utf-8")).decode(
+        "ascii").rstrip("=")
+
+
+def _summary(stats: dict, results: dict, ref: str, extra: dict,
+             permalink: str = "") -> dict:
     stats = stats or {}
     malicious = int(stats.get("malicious", 0))
     suspicious = int(stats.get("suspicious", 0))
@@ -67,7 +75,8 @@ def _summary(stats: dict, results: dict, sha: str, extra: dict) -> dict:
         "suspicious": suspicious,
         "harmless": harmless,
         "undetected": undetected,
-        "permalink": f"https://www.virustotal.com/gui/file/{sha}",
+        "permalink": permalink or
+        f"https://www.virustotal.com/gui/file/{ref}",
         "detections": detections,
     }
     summary.update(extra)
@@ -84,9 +93,21 @@ def summarize_file(body: dict, sha: str) -> dict:
                     })
 
 
-def summarize_analysis(attrs: dict, sha: str) -> dict:
+def summarize_url(body: dict, url: str) -> dict:
+    """Normalize a GET /urls/{id} response body to a verdict summary."""
+    attrs = (body.get("data") or {}).get("attributes") or {}
+    return _summary(attrs.get("last_analysis_stats"),
+                    attrs.get("last_analysis_results"), url, {
+                        "url": url,
+                    },
+                    permalink="https://www.virustotal.com/gui/url/"
+                    + url_id(url))
+
+
+def summarize_analysis(attrs: dict, sha: str, permalink: str = "") -> dict:
     """Normalize a completed analysis attributes object to a summary."""
-    return _summary(attrs.get("stats"), attrs.get("results"), sha, {})
+    return _summary(attrs.get("stats"), attrs.get("results"), sha, {},
+                    permalink=permalink)
 
 
 class AiohttpTransport:
@@ -108,6 +129,15 @@ class AiohttpTransport:
         form = aiohttp.FormData()
         form.add_field("file", data, filename=filename,
                        content_type="application/octet-stream")
+        async with aiohttp.ClientSession(timeout=self._timeout) as sess:
+            async with sess.post(self._base + path, data=form,
+                                 headers={"x-apikey": self._key}) as resp:
+                return resp.status, await self._json(resp), resp.headers
+
+    async def post_form(self, path: str, fields: dict):
+        form = aiohttp.FormData()
+        for key, value in fields.items():
+            form.add_field(key, value)
         async with aiohttp.ClientSession(timeout=self._timeout) as sess:
             async with sess.post(self._base + path, data=form,
                                  headers={"x-apikey": self._key}) as resp:
@@ -147,8 +177,11 @@ class VTClient:
             try:
                 if method == "GET":
                     status, body, headers = await self._transport.get(*args)
-                else:
+                elif method == "POST":
                     status, body, headers = await self._transport.post_file(
+                        *args)
+                else:
+                    status, body, headers = await self._transport.post_form(
                         *args)
             except asyncio.CancelledError:
                 raise
@@ -196,7 +229,36 @@ class VTClient:
         except (KeyError, TypeError):
             raise VTError(f"upload {filename}: bad response")
 
-    async def poll_analysis(self, analysis_id: str, sha: str):
+    async def lookup_url(self, url: str):
+        """URL verdict summary, or None when VT never saw the URL."""
+        status, body, _ = await self._call(
+            "GET", f"/urls/{url_id(url)}")
+        if status == 404:
+            return None
+        if status == 401:
+            raise VTAuthError("VirusTotal rejected the api_key (401)")
+        if status != 200:
+            raise VTError(f"url lookup: http {status}")
+        try:
+            return summarize_url(body, url)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise VTError(f"url lookup: bad response ({exc})")
+
+    async def submit_url(self, url: str) -> str:
+        """Submit a URL for analysis; returns the analysis id."""
+        status, body, _ = await self._call(
+            "FORM", "/urls", {"url": url})
+        if status == 401:
+            raise VTAuthError("VirusTotal rejected the api_key (401)")
+        if status != 200:
+            raise VTError(f"url submit: http {status}")
+        try:
+            return body["data"]["id"]
+        except (KeyError, TypeError):
+            raise VTError("url submit: bad response")
+
+    async def poll_analysis(self, analysis_id: str, sha: str,
+                            permalink: str = ""):
         """(completed, summary|None) for one queued analysis."""
         status, body, _ = await self._call(
             "GET", f"/analyses/{analysis_id}")
@@ -213,7 +275,8 @@ class VTClient:
         if attrs.get("status") != "completed":
             return False, None
         try:
-            return True, summarize_analysis(attrs, sha)
+            return True, summarize_analysis(attrs, sha,
+                                            permalink=permalink)
         except (KeyError, TypeError, ValueError) as exc:
             raise VTError(f"analysis {analysis_id[:16]}: bad result ({exc})")
 
@@ -303,6 +366,21 @@ class VTQueue:
                 await self._db.save_vt_scan(sha, "error",
                                             error=str(exc)[:500])
             done += 1
+        for url, analysis_id in await self._db.pending_vt_urls(
+                self._batch):
+            try:
+                await self._poll_one_url(url, analysis_id)
+            except VTQuotaExceeded:
+                log.info("vt daily quota exhausted; stopping pass")
+                return done
+            except VTAuthError as exc:
+                log.error("vt auth failed (bad api_key?): %s", exc)
+                return done
+            except VTError as exc:
+                log.warning("vt url poll failed: %s", exc)
+                await self._db.save_vt_url_scan(
+                    url, "error", error=str(exc)[:500])
+            done += 1
         return done
 
     async def _save_summary(self, sha: str, summary: dict):
@@ -347,3 +425,39 @@ class VTQueue:
         await self._db.save_vt_scan(sha, "pending",
                                     analysis_id=analysis_id)
         log.info("vt %s: uploaded, polling next pass", sha[:12])
+
+    async def scan_url(self, url: str) -> dict:
+        """Lookup-or-submit one URL; returns the stored scan row.
+
+        Raises VTAuthError/VTQuotaExceeded/VTError like _scan_one.
+        """
+        summary = await self._client.lookup_url(url)
+        if summary is not None:
+            await self._save_url_summary(url, summary)
+            log.info("vt url %s: known (%s)", url[:60],
+                     summary["status"])
+        else:
+            analysis_id = await self._client.submit_url(url)
+            await self._db.save_vt_url_scan(url, "pending",
+                                            analysis_id=analysis_id)
+            log.info("vt url %s: submitted, polling next pass",
+                     url[:60])
+        return await self._db.get_vt_url_scan(url)
+
+    async def _save_url_summary(self, url: str, summary: dict):
+        await self._db.save_vt_url_scan(
+            url, summary["status"], malicious=summary["malicious"],
+            suspicious=summary["suspicious"], harmless=summary["harmless"],
+            undetected=summary["undetected"],
+            permalink=summary["permalink"],
+            report_json=json.dumps(summary))
+
+    async def _poll_one_url(self, url: str, analysis_id: str):
+        permalink = ("https://www.virustotal.com/gui/url/" + url_id(url))
+        completed, summary = await self._client.poll_analysis(
+            analysis_id, url, permalink=permalink)
+        if completed:
+            await self._save_url_summary(url, summary)
+            log.info("vt url %s: %s", url[:60], summary["status"])
+        else:
+            log.debug("vt url %s: analysis still queued", url[:60])

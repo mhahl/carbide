@@ -47,8 +47,7 @@
 </a>
 </div>
 {% if not podman_ok %}<div class="alert alert-warning alert-soft" role="alert"><span>Podman unreachable from server</span></div>{% endif %}
-<div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-<section class="card card-border bg-base-100 xl:col-span-2" aria-label="Recent sessions">
+<section class="card card-border bg-base-100" aria-label="Recent sessions">
 <div class="card-body p-4 gap-2">
 <div class="flex items-center gap-2">
 <h2 class="font-medium">Recent sessions</h2>
@@ -87,7 +86,6 @@
 {% endif %}
 </div>
 </section>
-</div>
 <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
 <section class="card card-border bg-base-100" aria-label="Recent auth attempts">
 <div class="card-body p-4 gap-2">

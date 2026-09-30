@@ -106,6 +106,7 @@ _SCHEMA = {
         "nmap_args": (list, False, ["-sT", "-sV", "--top-ports", "1000"]),
         "cache_days": (int, False, 7),
         "timeout_s": ((int, float), False, 300.0),
+        "geo_enabled": (bool, False, True),
     },
 }
 

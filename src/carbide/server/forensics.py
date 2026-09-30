@@ -20,6 +20,67 @@ _STR_KINDS = {
     "modified": "changed",
 }
 
+# Volatile boot/runtime state excluded from forensic diffs. MySQL and
+# httpd rewrite their state on every boot and request; the entrypoint
+# also regenerates SSH host keys (ssh-keygen -A), sets the honey
+# password (chpasswd -> shadow), and stamps proxy SetEnv into
+# sshd_config — all with per-container random values, so unfiltered
+# they drown every report in noise. Tied to our image layout (see
+# image/entrypoint.sh); snapshots still hold the full filesystem, and
+# the skipped count is recorded in the report warnings.
+# Trade-off: attacker password changes and sshd_config backdoors are
+# hidden too; /etc/passwd and /etc/group stay monitored, so user
+# adds/deletes still show.
+VOLATILE_PREFIXES = (
+    "/var/lib/mysql",
+    "/var/log/mysql",
+    "/var/log/mysqld.log",
+    "/var/run/mysqld",
+    "/run/mysqld",
+    "/var/log/httpd",
+    "/etc/httpd/logs",
+    "/var/run/httpd",
+    "/run/httpd",
+    "/var/cache/httpd",
+    # Boot-rewritten single files (exact matches).
+    "/etc/shadow",
+    "/etc/shadow-",
+    "/etc/ssh/sshd_config",
+    "/etc/ssh/ssh_host_ecdsa_key",
+    "/etc/ssh/ssh_host_ecdsa_key.pub",
+    "/etc/ssh/ssh_host_ed25519_key",
+    "/etc/ssh/ssh_host_ed25519_key.pub",
+    "/etc/ssh/ssh_host_rsa_key",
+    "/etc/ssh/ssh_host_rsa_key.pub",
+    "/run/sshd.pid",
+)
+
+
+VOLATILE_SETTING = "forensics.volatile_prefixes"
+
+
+def is_volatile(path: str, prefixes=None) -> bool:
+    """True when a diff path is service runtime state, not evidence."""
+    if prefixes is None:
+        prefixes = VOLATILE_PREFIXES
+    return any(path == prefix or path.startswith(prefix + "/")
+               for prefix in prefixes)
+
+
+def parse_prefixes(raw):
+    """Validated prefix tuple from the console setting, else None."""
+    if not raw:
+        return None
+    try:
+        val = json.loads(raw)
+    except ValueError:
+        return None
+    if (not isinstance(val, list) or not val
+            or any(not isinstance(p, str) or not p.startswith("/")
+                   for p in val)):
+        return None
+    return tuple(val)
+
 
 def normalize_changes(raw: list) -> tuple[list[tuple[str, str]], list[str]]:
     """Normalize a container-changes payload to sorted (path, kind) rows.
@@ -105,6 +166,16 @@ class Forensics:
                 session_id, sensor_id, attacker_ip, container_id, reason,
                 f"unusable diff payload: {exc}", at)
         log.debug("diff for %s: %d paths", session_id, len(rows))
+        prefixes = await self.effective_prefixes()
+        kept = [row for row in rows if not is_volatile(row[0], prefixes)]
+        skipped = len(rows) - len(kept)
+        if skipped:
+            warnings.append(
+                f"{skipped} volatile service paths skipped "
+                "(mysql/httpd runtime state)")
+            log.debug("diff for %s: %d volatile paths skipped",
+                      session_id, skipped)
+        rows = kept
         try:
             await self._db.add_diff_rows(session_id, rows)
         except Exception as exc:
@@ -138,6 +209,17 @@ class Forensics:
                                                  True)
         return {"session_id": session_id, "changes": len(rows),
                 "warnings": warnings}
+
+    async def effective_prefixes(self):
+        """Console override when valid, else the shipped defaults."""
+        raw = await self._db.get_setting(VOLATILE_SETTING)
+        parsed = parse_prefixes(raw)
+        if parsed is None:
+            if raw:
+                log.warning("bad %s setting, using defaults",
+                            VOLATILE_SETTING)
+            return VOLATILE_PREFIXES
+        return parsed
 
     async def _collect_path(self, session_id, container_id, path, kind,
                             warnings):

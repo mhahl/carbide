@@ -58,7 +58,9 @@ FROM sessions ORDER BY started_at DESC NULLS LAST LIMIT 50;
    session_id = '...' ORDER BY id`.
 5. **Egress**: `SELECT at, method, url, status, bytes FROM squid_hits WHERE
    session_id = '...' ORDER BY id` — hostnames and sizes (TLS bodies are
-   intentionally not decrypted).
+   intentionally not decrypted). Any hit can be sent to VirusTotal
+   with its Scan button; verdicts land in the VT column (pending rows
+   complete on the next worker pass).
 
 ## Affinity and snapshots
 

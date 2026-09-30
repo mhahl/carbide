@@ -73,3 +73,4 @@ enabled = true            # automatic nmap profiling of attacker IPs
 nmap_args = ["-sT", "-sV", "--top-ports", "1000"]
 cache_days = 7            # one scan per IP per this long
 timeout_s = 300.0
+geo_enabled = true        # ip-api.com geolocation per IP per cache window

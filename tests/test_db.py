@@ -214,6 +214,72 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
             await self.db.count_auth_since(
                 now() - datetime.timedelta(hours=1)), 1)
 
+    async def test_clear_sessions_keeps_users_and_caches(self):
+        await self.db.set_affinity("s1", "1.2.3.4", "c1", 22001, "pw",
+                                   "10.0.0.2")
+        await self.db.ensure_session("sess", "s1", "1.2.3.4")
+        await self.db.add_auth_attempt("sess", "s1", "root", "pw", True,
+                                       True, now())
+        await self.db.add_transcript("sess", "ch1", "in", "stdin", 0,
+                                     b"hello", now())
+        await self.db.add_session_file("sess", "up/x", "e" * 64, 3, now())
+        await self.db.add_diff_rows("sess", [("/x", "added")])
+        await self.db.save_report("sess", "# md", "{}", now())
+        await self.db.add_squid_hit("sess", "s1", "10.0.0.2", now(),
+                                    "GET", "http://x/", 200, 5, "text/html")
+        await self.db.save_vt_scan("e" * 64, "clean")
+        await self.db.save_vt_url_scan("http://x/", "clean")
+        await self.db.set_setting("k", "v")
+        await self.db.create_web_user("op", "hash1")
+
+        counts = await self.db.clear_sessions()
+
+        self.assertEqual(counts["sessions"], 1)
+        self.assertEqual(counts["transcripts"], 1)
+        self.assertIsNone(await self.db.get_session("sess"))
+        self.assertEqual(await self.db.list_auth_attempts(), [])
+        self.assertEqual(await self.db.get_transcript("sess"), [])
+        self.assertEqual(await self.db.list_session_files("sess"), [])
+        self.assertEqual(await self.db.get_diff_rows("sess"), [])
+        self.assertIsNone(await self.db.get_report("sess"))
+        self.assertEqual(await self.db.list_squid_hits(), [])
+        # Everything session-adjacent survives.
+        self.assertIsNotNone(
+            await self.db.get_affinity("s1", "1.2.3.4"))
+        self.assertIsNotNone(await self.db.get_vt_scan("e" * 64))
+        self.assertIsNotNone(await self.db.get_vt_url_scan("http://x/"))
+        self.assertEqual(await self.db.get_setting("k"), "v")
+        self.assertIsNotNone(await self.db.get_web_user_by_name("op"))
+
+    async def test_vt_url_scans_round_trip(self):
+        self.assertIsNone(await self.db.get_vt_url_scan("http://x/"))
+        await self.db.save_vt_url_scan("http://x/", "pending",
+                                       analysis_id="an-9")
+        row = await self.db.get_vt_url_scan("http://x/")
+        self.assertEqual((row["status"], row["analysis_id"]),
+                         ("pending", "an-9"))
+        await self.db.save_vt_url_scan(
+            "http://x/", "malicious", malicious=3,
+            permalink="https://www.virustotal.com/gui/url/abc")
+        batch = await self.db.get_vt_url_scans(["http://x/", "http://y/"])
+        self.assertEqual(set(batch), {"http://x/"})
+        self.assertEqual(batch["http://x/"]["malicious"], 3)
+        self.assertEqual(await self.db.pending_vt_urls(10), [])
+        await self.db.save_vt_url_scan("http://z/", "pending",
+                                       analysis_id="an-10")
+        self.assertEqual(await self.db.pending_vt_urls(10),
+                         [("http://z/", "an-10")])
+
+    async def test_get_squid_hit(self):
+        await self.db.ensure_session("sess", "s1", "1.2.3.4")
+        await self.db.add_squid_hit("sess", "s1", "10.0.0.2", now(),
+                                    "GET", "http://x/", 200, 5, "text/html")
+        hits = await self.db.list_squid_hits(session_id="sess")
+        self.assertEqual(len(hits), 1)
+        row = await self.db.get_squid_hit(hits[0][0])
+        self.assertEqual(row[6], "http://x/")
+        self.assertIsNone(await self.db.get_squid_hit(999999))
+
     async def test_reset_wipes_all_data(self):
         await self.db.set_affinity("s1", "1.2.3.4", "c1", 22001, "pw",
                                    "10.0.0.2")
@@ -248,7 +314,7 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         versions = await self.db._exec(
             "SELECT version FROM schema_version", fetch="all")
         self.assertEqual({row[0] for row in versions},
-                         {1, 2, 3, 4, 5, 6})
+                         {1, 2, 3, 4, 5, 6, 7, 8})
         self.assertEqual(await self.db.create_web_user("op2", "h"), 1)
         await self.db.migrate()
 
@@ -305,10 +371,19 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(await self.db.ips_needing_scan(10, cutoff)),
                          {"1.2.3.4", "5.6.7.8"})
         await self.db.save_ip_intel("1.2.3.4", rdns="x.example",
-                                    open_ports='[{"port": 22}]')
+                                    open_ports='[{"port": 22}]',
+                                    country_code="NL", country="Netherlands",
+                                    city="Amsterdam", org="Example ISP")
         intel = await self.db.get_ip_intel("1.2.3.4")
         self.assertEqual(intel["status"], "ok")
         self.assertEqual(intel["rdns"], "x.example")
+        self.assertEqual(
+            (intel["country_code"], intel["city"], intel["org"]),
+            ("NL", "Amsterdam", "Example ISP"))
+        many = await self.db.get_ip_intel_many(["1.2.3.4", "9.9.9.9"])
+        self.assertEqual(set(many), {"1.2.3.4"})
+        self.assertEqual(many["1.2.3.4"]["country"], "Netherlands")
+        self.assertEqual(await self.db.get_ip_intel_many([]), {})
         self.assertEqual(await self.db.ips_needing_scan(10, cutoff),
                          ["5.6.7.8"])
 
