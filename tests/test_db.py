@@ -30,6 +30,26 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         await self.db.migrate()
         await self.db.migrate()
 
+    async def test_migration5_backfills_container_names(self):
+        await self.db.ensure_session("s", "s1", "1.1.1.1")
+        at = now()
+        # Pre-migration rows: forensics names with sensor default.
+        await self.db.add_session_file(
+            "s", "container:/etc/passwd", "p" * 64, 3, at,
+            origin="sensor")
+        await self.db.add_session_file(
+            "s", "scp-upload:/tmp/x", "q" * 64, 3, at)
+        # Re-apply migration 5 through the real path.
+        await self.db._exec(
+            "DELETE FROM schema_version WHERE version = 5")
+        await self.db.migrate()
+        rows = await self.db._exec(
+            "SELECT name, origin FROM session_files", fetch="all")
+        self.assertEqual(
+            dict(rows),
+            {"container:/etc/passwd": "forensics",
+             "scp-upload:/tmp/x": "sensor"})
+
     async def test_affinity_crud(self):
         self.assertIsNone(await self.db.get_affinity("s1", "1.2.3.4"))
         await self.db.set_affinity("s1", "1.2.3.4", "c1", 22001, "pw",
@@ -225,7 +245,7 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         # schema_version survives; sequences restart; db stays usable
         versions = await self.db._exec(
             "SELECT version FROM schema_version", fetch="all")
-        self.assertEqual({row[0] for row in versions}, {1, 2, 3, 4})
+        self.assertEqual({row[0] for row in versions}, {1, 2, 3, 4, 5})
         self.assertEqual(await self.db.create_web_user("op2", "h"), 1)
         await self.db.migrate()
 

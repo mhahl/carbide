@@ -162,8 +162,9 @@ class FakeDatabase:
         row = self.blobs.get(sha)
         return (sha, row[0], row[1]) if row else None
 
-    async def add_session_file(self, session_id, name, sha, size, at):
-        self.files.append((session_id, name, sha, size, at))
+    async def add_session_file(self, session_id, name, sha, size, at,
+                               origin="sensor"):
+        self.files.append((session_id, name, sha, size, at, origin))
 
     async def add_diff_rows(self, session_id, rows):
         self.diffs.extend((session_id, p, k) for p, k in rows)
@@ -670,3 +671,8 @@ class FakePodman:
     def remove_image(self, image):
         if image in self.images:
             self.images.remove(image)
+
+    def pull_image(self, ref):
+        if ref not in self.images:
+            self.images.append(ref)
+        return {"tags": [ref]}

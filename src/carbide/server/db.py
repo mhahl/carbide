@@ -172,6 +172,12 @@ MIGRATIONS = [
         value TEXT NOT NULL,
         updated_at TIMESTAMPTZ DEFAULT now());
     """),
+    (5, """
+    ALTER TABLE session_files ADD COLUMN IF NOT EXISTS origin TEXT
+        NOT NULL DEFAULT 'sensor';
+    UPDATE session_files SET origin = 'forensics'
+        WHERE name LIKE 'container:%';
+    """),
 ]
 
 
@@ -458,11 +464,14 @@ class Database:
             "SELECT sha256, path, size FROM blobs WHERE sha256 = %s",
             (sha,), fetch="one")
 
-    async def add_session_file(self, session_id, name, sha, size, at):
+    async def add_session_file(self, session_id, name, sha, size, at,
+                               origin="sensor"):
+        # origin: 'sensor' (attacker-copied scp/sftp evidence, VT-scanned)
+        # or 'forensics' (diff-collected container files, never scanned).
         await self._exec(
             "INSERT INTO session_files (session_id, name, blob_sha, size, "
-            "at) VALUES (%s,%s,%s,%s,%s)",
-            (session_id, name, sha, size, at))
+            "at, origin) VALUES (%s,%s,%s,%s,%s,%s)",
+            (session_id, name, sha, size, at, origin))
 
     async def add_diff_rows(self, session_id, rows):
         for path, kind in rows:
@@ -850,14 +859,17 @@ class Database:
              permalink, report_json, analysis_id, error))
 
     async def vt_candidates(self, limit: int, cutoff):
-        """Session-captured files (scp/sftp evidence) never scanned;
+        """Sensor-captured files (scp/sftp evidence) never scanned;
         pending analyses (re-polled, never re-uploaded); and rows older
         than cutoff (errors and stale successes alike are due for a
-        re-check). Forensic-only blobs are deliberately excluded."""
+        re-check). Forensics-collected container files (origin =
+        'forensics': /etc/passwd-style diff captures) are deliberately
+        excluded — they are evidence, not attacker uploads."""
         return await self._exec(
             "SELECT f.blob_sha, MAX(f.size) AS size FROM session_files f "
             "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
-            "WHERE f.blob_sha <> '' AND (v.sha256 IS NULL "
+            "WHERE f.blob_sha <> '' AND f.origin = 'sensor' "
+            "AND (v.sha256 IS NULL "
             "OR v.status = 'pending' OR v.updated_at < %s) "
             "GROUP BY f.blob_sha ORDER BY MIN(f.at) LIMIT %s",
             (cutoff, limit), fetch="all")

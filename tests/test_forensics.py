@@ -105,6 +105,11 @@ class ForensicsTest(unittest.IsolatedAsyncioTestCase):
         # added file stored as blob
         names = [f[1] for f in self.db.files]
         self.assertIn("container:/tmp/tool", names)
+        # diff-collected files are forensics origin: evidence, never
+        # VT-scanned (only sensor-captured scp/sftp files scan).
+        self.assertTrue(self.db.files)
+        for f in self.db.files:
+            self.assertEqual(f[5], "forensics")
         # snapshot committed
         self.assertEqual(len(self.pod.images), 1)
         snaps = await self.db.list_snapshots("s1", "1.2.3.4")

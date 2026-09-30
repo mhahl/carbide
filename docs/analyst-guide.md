@@ -50,7 +50,10 @@ FROM sessions ORDER BY started_at DESC NULLS LAST LIMIT 50;
    `scp-upload:`/`scp-download:` (container destination resolved from the
    `scp -t/-f` target; bare basenames when no target was visible),
    `container:` (forensic diff content). `*-raw` holds unparsable
-   remainders — always inspect those too.
+   remainders — always inspect those too. Only sensor-captured files
+   (the `scp-*`/`sftp-*` evidence) are sent to VirusTotal;
+   `container:` forensic captures stay local as evidence and show
+   `unscanned`.
 4. **Auth**: `SELECT username, password, accepted FROM auth_attempts WHERE
    session_id = '...' ORDER BY id`.
 5. **Egress**: `SELECT at, method, url, status, bytes FROM squid_hits WHERE

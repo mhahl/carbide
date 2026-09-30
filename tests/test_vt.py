@@ -188,12 +188,12 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
         await loop.run_in_executor(None, self.cluster.stop)
         self.tmp.cleanup()
 
-    async def _capture(self, ref, name="up/x"):
+    async def _capture(self, ref, name="up/x", origin="sensor"):
         await self.db.ensure_session("s", "s1", "9.9.9.9")
         await self.db.add_blob(ref.sha256, ref.path, ref.size)
         await self.db.add_session_file(
             "s", name, ref.sha256, ref.size,
-            datetime.datetime.now(datetime.timezone.utc))
+            datetime.datetime.now(datetime.timezone.utc), origin=origin)
 
     async def test_known_file_saved_without_upload(self):
         ref = self.blobs.put_bytes(b"evil")
@@ -228,6 +228,18 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.queue.run_once(), 1)
         row = await self.db.get_vt_scan(ref.sha256)
         self.assertEqual((row["status"], row["harmless"]), ("clean", 70))
+        self.assertEqual(len(self.client.uploads), 1)
+
+    async def test_forensics_files_never_scanned(self):
+        sensor_ref = self.blobs.put_bytes(b"attacker-upload")
+        await self._capture(sensor_ref, name="scp-upload:/tmp/x")
+        foren_ref = self.blobs.put_bytes(b"passwd-contents")
+        await self._capture(foren_ref, name="container:/etc/passwd",
+                            origin="forensics")
+        self.assertEqual(await self.queue.run_once(), 1)
+        self.assertIsNotNone(
+            await self.db.get_vt_scan(sensor_ref.sha256))
+        self.assertIsNone(await self.db.get_vt_scan(foren_ref.sha256))
         self.assertEqual(len(self.client.uploads), 1)
 
     async def test_oversize_and_missing_blob(self):

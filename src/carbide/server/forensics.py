@@ -202,7 +202,8 @@ class Forensics:
             await self._db.add_session_file(
                 session_id, f"container:{path}", ref_blob.sha256,
                 ref_blob.size,
-                datetime.datetime.now(datetime.timezone.utc))
+                datetime.datetime.now(datetime.timezone.utc),
+                origin="forensics")
         except Exception as exc:
             entry["note"] = f"file record not stored: {exc}"
             warnings.append(f"{path}: file record not stored: {exc}")
@@ -234,7 +235,8 @@ class Forensics:
             await self._db.add_blob(ref.sha256, ref.path, ref.size)
             await self._db.add_session_file(
                 session_id, "container:full-export.tar", ref.sha256,
-                ref.size, datetime.datetime.now(datetime.timezone.utc))
+                ref.size, datetime.datetime.now(datetime.timezone.utc),
+                origin="forensics")
             changes.append({"path": "<full export>", "kind": "export",
                             "size": len(data), "sha256": ref.sha256})
             log.debug("forensics %s: full export stored (%d bytes)",
