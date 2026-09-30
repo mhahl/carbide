@@ -341,3 +341,56 @@ async def user_password(request):
     log.info("console %s: reset password for user %d",
              request["user"]["username"], user_id)
     raise web.HTTPFound("/users?notice=password+updated")
+
+
+# -- server settings -------------------------------------------------------
+@require_auth
+async def vt_key_save(request):
+    from ..vt import VT_KEY_SETTING
+    form = await request.post()
+    key = (form.get("api_key") or "").strip()
+    user = request["user"]["username"]
+    if len(key) < 16 or len(key) > 256 or any(ch.isspace() for ch in key):
+        raise web.HTTPFound("/settings?error=key+looks+invalid")
+    await request.app["db"].set_setting(VT_KEY_SETTING, key)
+    log.info("console %s: saved virustotal api key (…%s)",
+             user, key[-4:])
+    raise web.HTTPFound("/settings?notice=key+saved")
+
+
+@require_auth
+async def vt_key_clear(request):
+    from ..vt import VT_KEY_SETTING
+    user = request["user"]["username"]
+    await request.app["db"].delete_setting(VT_KEY_SETTING)
+    log.info("console %s: cleared console virustotal api key", user)
+    raise web.HTTPFound("/settings?notice=key+cleared")
+
+
+@require_auth
+async def vt_key_verify(request):
+    from ..vt import (VTAuthError, VTError, VTQuotaExceeded, build_client,
+                      resolve_vt_key)
+    user = request["user"]["username"]
+    db = request.app["db"]
+    cfg = request.app["cfg"]
+    key = await resolve_vt_key(db, cfg)
+    if not key:
+        raise web.HTTPFound("/settings?error=no+api+key+set")
+    client = build_client(cfg, db,
+                          transport=request.app.get("vt_transport"),
+                          api_key=key)
+    try:
+        # Any answer (report or 404) proves the key; only 401 fails it.
+        await client.lookup("f" * 64)
+    except VTAuthError:
+        log.info("console %s: virustotal key verify rejected", user)
+        raise web.HTTPFound("/settings?error=key+rejected+401")
+    except VTQuotaExceeded:
+        raise web.HTTPFound("/settings?error=daily+quota+exhausted")
+    except VTError as exc:
+        log.warning("console %s: virustotal key verify failed: %s",
+                    user, exc)
+        raise web.HTTPFound("/settings?error=verify+failed")
+    log.info("console %s: virustotal key verified", user)
+    raise web.HTTPFound("/settings?notice=key+valid")

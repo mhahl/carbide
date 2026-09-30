@@ -15,7 +15,8 @@ sessions' container changes side by side with their snapshots;
 password guess plus the honeypot SSH credentials; **Podman** inspects
 live containers (status, full `inspect`, live diff, per-file reads and
 downloads); **Logs** tails the server log live; **Sensors** shows link
-state. Anything the console can't express, drop to SQL (next section).
+state; **Settings** manages the VirusTotal key and quota. Anything the
+console can't express, drop to SQL (next section).
 
 ## Connecting
 

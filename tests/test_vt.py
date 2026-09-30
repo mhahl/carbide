@@ -7,8 +7,9 @@ import unittest
 from carbide.common.blobstore import BlobStore
 from carbide.common.config import validate
 from carbide.server.vt import (VTAuthError, VTClient, VTError, VTQueue,
-                               VTQuotaExceeded, build_client,
+                               VTQuotaExceeded, build_client, resolve_vt_key,
                                summarize_analysis, summarize_file)
+from tests.fakes import FakeTransport
 from tests.pgcluster import PgCluster, postgres_available
 
 from carbide.server.db import Database
@@ -48,23 +49,6 @@ def make_cfg(**over):
     for section, values in over.items():
         raw.setdefault(section, {}).update(values)
     return validate(raw)
-
-
-class FakeTransport:
-    def __init__(self):
-        self.calls = []
-        self.get_responses = {}
-        self.post_responses = []  # popped per upload, else default
-
-    async def get(self, path):
-        self.calls.append(("GET", path))
-        return self.get_responses.get(path, (404, {}, {}))
-
-    async def post_file(self, path, data, filename):
-        self.calls.append(("POST", path, len(data), filename))
-        if self.post_responses:
-            return self.post_responses.pop(0)
-        return (200, {"data": {"id": "an-1"}}, {})
 
 
 def make_client(transport, quota=True, rpm=6000):
@@ -194,7 +178,8 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.blobs = BlobStore(os.path.join(self.tmp.name, "blobs"), 10**9)
         self.client = FakeClient()
-        self.queue = VTQueue(self.db, self.blobs, self.client, make_cfg())
+        self.queue = VTQueue(self.db, self.blobs, make_cfg(),
+                             client=self.client)
 
     async def asyncTearDown(self):
         import asyncio
@@ -260,6 +245,22 @@ class QueueTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.db.get_vt_scan(ref.sha256))
         self.client.lookup_error = VTAuthError("401")
         self.assertEqual(await self.queue.run_once(), 0)
+        self.assertIsNone(await self.db.get_vt_scan(ref.sha256))
+
+    async def test_resolve_key_prefers_setting(self):
+        cfg = make_cfg(virustotal={"enabled": True, "api_key": "file-key"})
+        self.assertEqual(await resolve_vt_key(self.db, cfg), "file-key")
+        await self.db.set_setting("virustotal.api_key", "  db-key\n")
+        self.assertEqual(await resolve_vt_key(self.db, cfg), "db-key")
+        await self.db.delete_setting("virustotal.api_key")
+        self.assertEqual(await resolve_vt_key(self.db, cfg), "file-key")
+        self.assertEqual(await resolve_vt_key(self.db, make_cfg()), "")
+
+    async def test_queue_idles_without_key(self):
+        ref = self.blobs.put_bytes(b"nokey")
+        await self.db.add_blob(ref.sha256, ref.path, ref.size)
+        queue = VTQueue(self.db, self.blobs, make_cfg())
+        self.assertEqual(await queue.run_once(), 0)
         self.assertIsNone(await self.db.get_vt_scan(ref.sha256))
 
     async def test_build_client_claims_quota(self):

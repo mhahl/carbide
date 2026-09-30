@@ -141,11 +141,7 @@ async def _reset_db(cfg):
 async def _vt_backfill(cfg):
     from ..common.blobstore import BlobStore
     from .db import Database
-    from .vt import VTQueue, build_client
-    if not cfg.get("virustotal.enabled", False):
-        print("carbide-server: virustotal not enabled (set a key first)",
-              file=sys.stderr)
-        return 2
+    from .vt import VTQueue, resolve_vt_key
     scfg = cfg.section("server")
     db = Database(scfg["db_dsn"])
     try:
@@ -154,9 +150,13 @@ async def _vt_backfill(cfg):
         print(f"carbide-server: db connect failed: {exc}", file=sys.stderr)
         return 1
     try:
+        if not await resolve_vt_key(db, cfg):
+            print("carbide-server: no VirusTotal api key "
+                  "(console settings or --vt-key)", file=sys.stderr)
+            return 2
         blobs = BlobStore(scfg["blob_dir"],
                           cfg.get("quotas.blob_max_bytes", 10 * 1024**3))
-        queue = VTQueue(db, blobs, build_client(cfg, db), cfg, batch=50)
+        queue = VTQueue(db, blobs, cfg, batch=50)
         total = 0
         for _ in range(12):
             done = await queue.run_once()

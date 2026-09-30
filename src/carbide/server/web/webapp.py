@@ -94,6 +94,7 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_get("/sensors/{id}", views.sensor_detail)
     app.router.add_get("/logs", views.logs_view)
     app.router.add_get("/users", views.users_view)
+    app.router.add_get("/settings", views.settings_view)
     app.router.add_get("/fragments/containers", views.frag_containers)
     app.router.add_get("/fragments/sensors", views.frag_sensors)
     app.router.add_get("/fragments/recent-sessions",
@@ -121,6 +122,10 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_post("/users/{id}/disable", actions.user_disable)
     app.router.add_post("/users/{id}/enable", actions.user_enable)
     app.router.add_post("/users/{id}/password", actions.user_password)
+    app.router.add_post("/settings/virustotal/key", actions.vt_key_save)
+    app.router.add_post("/settings/virustotal/key/delete",
+                        actions.vt_key_clear)
+    app.router.add_post("/settings/virustotal/verify", actions.vt_key_verify)
     app.router.add_static("/static",
                           os.path.join(HERE, "static"),
                           name="static")

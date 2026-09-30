@@ -12,7 +12,7 @@ from .ipintel import IPIntel
 from .podman_wrap import PodmanWrapper
 from .pool import Pool
 from .squid import SquidTailer
-from .vt import VTQueue, build_client
+from .vt import VTQueue
 from .web.webapp import WebConsole, create_app
 
 log = logging.getLogger("carbide.server")
@@ -42,11 +42,9 @@ class ServerApp:
                                      bus=self.bus)
         else:
             self.squid = None
-        if cfg.get("virustotal.enabled", False):
-            self.vt = VTQueue(self.db, self.blobs,
-                              build_client(cfg, self.db), cfg)
-        else:
-            self.vt = None
+        # Always present: the queue resolves its key per pass (console
+        # setting, else file config) and idles quietly with neither.
+        self.vt = VTQueue(self.db, self.blobs, cfg)
         if cfg.get("ipintel.enabled", True):
             self.ipintel = IPIntel(self.db, cfg)
         else:
@@ -77,11 +75,8 @@ class ServerApp:
                                              name="squid"))
         else:
             log.info("squid ingest disabled")
-        if self.vt is not None:
-            tasks.append(asyncio.create_task(self.vt.run_forever(),
-                                             name="vt"))
-        else:
-            log.info("vt queue disabled")
+        tasks.append(asyncio.create_task(self.vt.run_forever(),
+                                         name="vt"))
         if self.ipintel is not None:
             tasks.append(asyncio.create_task(self.ipintel.run_forever(),
                                              name="ipintel"))

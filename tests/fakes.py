@@ -24,6 +24,8 @@ class FakeDatabase:
         self.applied = set()
         self.vt_scans = {}
         self.intel = {}
+        self.settings = {}
+        self.vt_quota = {}
 
     async def note_sensor(self, sensor_id):
         self.sensors.setdefault(sensor_id, {"first": utcnow()})
@@ -353,6 +355,25 @@ class FakeDatabase:
     async def delete_managed_sensor(self, sensor_id):
         getattr(self, "managed", {}).pop(sensor_id, None)
 
+    async def get_setting(self, key):
+        return self.settings.get(key)
+
+    async def set_setting(self, key, value):
+        self.settings[key] = value
+
+    async def delete_setting(self, key):
+        self.settings.pop(key, None)
+
+    async def claim_vt_quota(self, day, cap):
+        used = self.vt_quota.get(day, 0)
+        if used >= cap:
+            return False
+        self.vt_quota[day] = used + 1
+        return True
+
+    async def vt_quota_used(self, day):
+        return self.vt_quota.get(day, 0)
+
     async def get_vt_scan(self, sha):
         row = self.vt_scans.get(sha)
         return dict(row) if row else None
@@ -423,6 +444,25 @@ class FakeDatabase:
                          vt.get("suspicious")))
         rows.reverse()
         return rows[:limit]
+
+
+class FakeTransport:
+    """Scripted VirusTotal HTTP transport (same shape as AiohttpTransport)."""
+
+    def __init__(self):
+        self.calls = []
+        self.get_responses = {}
+        self.post_responses = []  # popped per upload, else default
+
+    async def get(self, path):
+        self.calls.append(("GET", path))
+        return self.get_responses.get(path, (404, {}, {}))
+
+    async def post_file(self, path, data, filename):
+        self.calls.append(("POST", path, len(data), filename))
+        if self.post_responses:
+            return self.post_responses.pop(0)
+        return (200, {"data": {"id": "an-1"}}, {})
 
 
 class _FakeContainer:

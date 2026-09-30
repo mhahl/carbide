@@ -166,6 +166,12 @@ MIGRATIONS = [
         error TEXT DEFAULT '',
         scanned_at TIMESTAMPTZ DEFAULT now());
     """),
+    (4, """
+    CREATE TABLE IF NOT EXISTS server_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT now());
+    """),
 ]
 
 
@@ -866,6 +872,24 @@ class Database:
             "AND (i.attacker_ip IS NULL OR i.scanned_at < %s) "
             "LIMIT %s", (cutoff, limit), fetch="all")
         return [row[0] for row in rows]
+
+    # -- server settings (console-editable) -------------------------------
+    async def get_setting(self, key: str):
+        row = await self._exec(
+            "SELECT value FROM server_settings WHERE key = %s", (key,),
+            fetch="one")
+        return row[0] if row else None
+
+    async def set_setting(self, key: str, value: str):
+        await self._exec(
+            "INSERT INTO server_settings (key, value) VALUES (%s, %s) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "
+            "updated_at = now()",
+            (key, value))
+
+    async def delete_setting(self, key: str):
+        await self._exec(
+            "DELETE FROM server_settings WHERE key = %s", (key,))
 
     # -- attacker overview (console) --------------------------------------
     async def list_attackers(self, limit=200, offset=0):

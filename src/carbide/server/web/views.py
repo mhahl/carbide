@@ -504,6 +504,31 @@ async def users_view(request):
                    "notice": request.query.get("notice") or ""})
 
 
+# -- settings ----------------------------------------------------------
+@require_auth
+async def settings_view(request):
+    from ..vt import VT_KEY_SETTING
+    db = request.app["db"]
+    cfg = request.app["cfg"]
+    stored = await db.get_setting(VT_KEY_SETTING)
+    file_key = cfg.section("virustotal")["api_key"] or ""
+    if stored and stored.strip():
+        source, masked, active = "console", "••••" + stored.strip()[-4:], True
+    elif file_key:
+        source, masked, active = "config file", "••••" + file_key[-4:], True
+    else:
+        source, masked, active = "none", "", False
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    return render(request, "settings.html", {
+        "vt_source": source, "vt_masked": masked, "vt_active": active,
+        "vt_console_set": bool(stored and stored.strip()),
+        "vt_used": await db.vt_quota_used(today),
+        "vt_cap": cfg.get("virustotal.daily_cap", 500),
+        "vt_rpm": cfg.get("virustotal.requests_per_minute", 4),
+        "error": request.query.get("error") or "",
+        "notice": request.query.get("notice") or ""})
+
+
 # -- fragments (htmx partials) -------------------------------------------------
 @require_auth
 async def frag_containers(request):

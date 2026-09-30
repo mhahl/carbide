@@ -222,7 +222,7 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         # schema_version survives; sequences restart; db stays usable
         versions = await self.db._exec(
             "SELECT version FROM schema_version", fetch="all")
-        self.assertEqual({row[0] for row in versions}, {1, 2, 3})
+        self.assertEqual({row[0] for row in versions}, {1, 2, 3, 4})
         self.assertEqual(await self.db.create_web_user("op2", "h"), 1)
         await self.db.migrate()
 
@@ -300,6 +300,17 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(frows[0][2:], ("up/x", "e" * 64, 3, frows[0][5],
                                         "malicious", 9, 0))
         self.assertEqual(await self.db.list_files_by_ip("8.8.8.8"), [])
+
+    async def test_server_settings_crud(self):
+        self.assertIsNone(await self.db.get_setting("virustotal.api_key"))
+        await self.db.set_setting("virustotal.api_key", "k1")
+        self.assertEqual(await self.db.get_setting("virustotal.api_key"),
+                         "k1")
+        await self.db.set_setting("virustotal.api_key", "k2")
+        self.assertEqual(await self.db.get_setting("virustotal.api_key"),
+                         "k2")
+        await self.db.delete_setting("virustotal.api_key")
+        self.assertIsNone(await self.db.get_setting("virustotal.api_key"))
 
     async def test_close_is_idempotent_and_guards_queries(self):
         await self.db.close()

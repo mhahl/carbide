@@ -300,11 +300,13 @@ files (tokens live there — treat as secrets).
 
 File verdicts and attacker profiling run as server background jobs:
 
-- **VirusTotal** (off until `VT_API_KEY` is set): captured files are
+- **VirusTotal** (off until a key exists): captured files are
   looked up by hash first and uploaded only when unknown; verdicts are
   cached in `vt_scans` (re-checked after 30 days). The queue paces
   itself to the public tier (4/min, 500/day, persisted across
-  restarts). Quota spend is visible per day:
+  restarts). Set the key with `--vt-key` at setup or later in the
+  console **Settings** page (console key wins, no restart needed);
+  quota spend is visible there and per day:
   `SELECT * FROM vt_quota ORDER BY day DESC LIMIT 7;`
   Backfill history on demand (spends quota, then exits):
   `podman compose exec server carbide-server -c /etc/carbide/config.toml --vt-backfill`

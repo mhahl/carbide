@@ -17,7 +17,7 @@ from carbide.server.forensics import Forensics
 from carbide.server.pool import Pool
 from carbide.server.web import auth as webauth
 from carbide.server.web.webapp import create_app
-from tests.fakes import FakeDatabase, FakePodman, utcnow
+from tests.fakes import FakeDatabase, FakePodman, FakeTransport, utcnow
 
 
 def make_config():
@@ -67,7 +67,9 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
             "cfg": cfg, "db": self.db, "pool": self.pool,
             "pod": self.pod, "blobs": self.blobs, "api": self.api,
             "forensics": forensics, "eviction": self.eviction,
-            "bus": self.bus, "logring": self.logring})
+            "bus": self.bus, "logring": self.logring,
+            "vt_transport": FakeTransport()})
+        self.app = app
         self.client = TestClient(TestServer(app))
         await self.client.start_server()
         self.addAsyncCleanup(self.client.close)
@@ -150,7 +152,8 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
                      f"/podman/containers/{cid}/file?path=/etc/motd",
                      "/sensors", "/sensors/new", "/sensors/s1",
                      "/attackers", "/attackers/9.9.9.9",
-                     "/logs", "/users", "/fragments/containers",
+                     "/logs", "/users", "/settings",
+                     "/fragments/containers",
                      "/fragments/sensors", "/fragments/recent-sessions"):
             with self.subTest(path=path):
                 resp = await self.client.get(path)
@@ -191,6 +194,49 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("unscanned", body)
         body = await (await self.client.get("/sessions/sess1")).text()
         self.assertIn("unscanned", body)
+
+    async def test_vt_key_settings_flow(self):
+        await self.login()
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("VirusTotal", body)
+        self.assertIn("0 / 500", body)
+        resp = await self.client.post(
+            "/settings/virustotal/key", data={"api_key": "short"},
+            allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("error=key+looks+invalid", resp.headers["Location"])
+        key = "k" * 60 + "ab12"
+        resp = await self.client.post(
+            "/settings/virustotal/key", data={"api_key": key},
+            allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("notice=key+saved", resp.headers["Location"])
+        self.assertEqual(await self.db.get_setting("virustotal.api_key"),
+                         key)
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("console", body)
+        self.assertIn("••••ab12", body)
+        self.assertNotIn(key, body)
+        resp = await self.client.post(
+            "/settings/virustotal/verify", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("notice=key+valid", resp.headers["Location"])
+        resp = await self.client.post(
+            "/settings/virustotal/key/delete", allow_redirects=False)
+        self.assertIn("notice=key+cleared", resp.headers["Location"])
+        self.assertIsNone(await self.db.get_setting("virustotal.api_key"))
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("none", body)
+
+    async def test_vt_key_verify_rejected(self):
+        await self.db.set_setting("virustotal.api_key", "k" * 64)
+        self.app["vt_transport"].get_responses["/files/" + "f" * 64] = (
+            401, {}, {})
+        await self.login()
+        resp = await self.client.post(
+            "/settings/virustotal/verify", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("error=key+rejected+401", resp.headers["Location"])
 
     async def test_empty_states_and_reset_modal(self):
         await self.login()

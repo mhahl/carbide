@@ -16,6 +16,7 @@ import aiohttp
 log = logging.getLogger("carbide.server.vt")
 
 BASE_URL = "https://www.virustotal.com/api/v3"
+VT_KEY_SETTING = "virustotal.api_key"
 _MAX_DETECTIONS = 50
 _MAX_RETRIES = 3
 
@@ -217,7 +218,15 @@ class VTClient:
             raise VTError(f"analysis {analysis_id[:16]}: bad result ({exc})")
 
 
-def build_client(cfg, db, transport=None) -> VTClient:
+async def resolve_vt_key(db, cfg) -> str:
+    """Effective API key: console setting first, file config fallback."""
+    stored = await db.get_setting(VT_KEY_SETTING)
+    if stored and stored.strip():
+        return stored.strip()
+    return cfg.section("virustotal")["api_key"] or ""
+
+
+def build_client(cfg, db, transport=None, api_key=None) -> VTClient:
     """VTClient wired to config limits and the persisted daily quota."""
     vcfg = cfg.section("virustotal")
     cap = vcfg["daily_cap"]
@@ -226,19 +235,28 @@ def build_client(cfg, db, transport=None) -> VTClient:
         today = datetime.datetime.now(datetime.timezone.utc).date()
         return await db.claim_vt_quota(today, cap)
 
-    return VTClient(vcfg["api_key"],
+    return VTClient(api_key if api_key is not None else vcfg["api_key"],
                     requests_per_minute=vcfg["requests_per_minute"],
                     quota_claim=claim, transport=transport)
 
 
 class VTQueue:
-    """Drains unscanned blobs through VirusTotal, paced by quota."""
+    """Drains unscanned blobs through VirusTotal, paced by quota.
 
-    def __init__(self, db, blobs, client: VTClient, cfg,
+    The API key resolves per pass (console setting, else file config),
+    so a key saved in the console takes effect without a restart. With
+    no key anywhere the pass is a quiet no-op (a warning when the file
+    config claims enabled).
+    """
+
+    def __init__(self, db, blobs, cfg, client=None,
                  interval_s: float = 300.0, batch: int = 25):
         self._db = db
         self._blobs = blobs
+        self._cfg = cfg
         self._client = client
+        self._injected = client is not None
+        self._key = None
         self._rescan_days = cfg.get("virustotal.rescan_after_days", 30)
         self._max_upload = cfg.get("virustotal.max_upload_bytes",
                                    32 * 1024 * 1024)
@@ -257,6 +275,18 @@ class VTQueue:
 
     async def run_once(self, now=None) -> int:
         now = now or datetime.datetime.now(datetime.timezone.utc)
+        if not self._injected:
+            key = await resolve_vt_key(self._db, self._cfg)
+            if not key:
+                if self._cfg.get("virustotal.enabled", False):
+                    log.warning("vt enabled but no api key set")
+                else:
+                    log.debug("vt idle: no api key")
+                return 0
+            if key != self._key:
+                self._client = build_client(self._cfg, self._db,
+                                            api_key=key)
+                self._key = key
         cutoff = now - datetime.timedelta(days=self._rescan_days)
         done = 0
         for sha, size in await self._db.vt_candidates(self._batch, cutoff):
