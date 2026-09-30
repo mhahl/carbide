@@ -248,6 +248,16 @@ class FakeDatabase:
         return [(idx, f[1], f[2], f[3], f[4])
                 for idx, f in enumerate(self.files) if f[0] == session_id]
 
+    async def get_session_file(self, file_id):
+        try:
+            idx = int(file_id)
+        except (TypeError, ValueError):
+            return None
+        if 0 <= idx < len(self.files):
+            f = self.files[idx]
+            return (idx, f[0], f[1], f[2], f[3], f[4])
+        return None
+
     _ATTEMPT_SORT_KEYS = {
         "id": lambda r: r[0],
         "at": lambda r: r[7],

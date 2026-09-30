@@ -642,6 +642,12 @@ class Database:
             "WHERE session_id = %s ORDER BY id", (session_id,),
             fetch="all")
 
+    async def get_session_file(self, file_id: int):
+        return await self._exec(
+            "SELECT id, session_id, name, blob_sha, size, at "
+            "FROM session_files WHERE id = %s", (file_id,),
+            fetch="one")
+
     _ATTEMPT_SORTS = {
         "id": ("id", False),
         "at": ("at", False),

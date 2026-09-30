@@ -426,6 +426,14 @@ class VTQueue:
                                     analysis_id=analysis_id)
         log.info("vt %s: uploaded, polling next pass", sha[:12])
 
+    async def scan_file(self, sha: str, size: int) -> dict:
+        """Lookup-or-upload one blob; returns the stored scan row.
+
+        Raises VTAuthError/VTQuotaExceeded/VTError like _scan_one.
+        """
+        await self._scan_one(sha, size)
+        return await self._db.get_vt_scan(sha)
+
     async def scan_url(self, url: str) -> dict:
         """Lookup-or-submit one URL; returns the stored scan row.
 

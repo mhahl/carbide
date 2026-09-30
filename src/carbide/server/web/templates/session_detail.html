@@ -71,11 +71,12 @@
 </div>
 {% if files %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Name</th><th scope="col" class="text-right" data-sort-type="number">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th><th scope="col" data-sort="off"><span class="sr-only">Download</span></th></tr></thead>
+<thead><tr><th scope="col">Name</th><th scope="col" class="text-right" data-sort-type="number">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th><th scope="col" data-sort="off"><span class="sr-only">Scan</span></th><th scope="col" data-sort="off"><span class="sr-only">Download</span></th></tr></thead>
 <tbody>
 {% for f in files %}
 <tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td><td class="text-right tabular-nums" data-sort-value="{{ f.size }}">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
 <td>{% include "_verdict.html" %}</td>
+<td>{% if f.sha and (not f.vt or f.vt == "error") %}<button class="btn btn-xs btn-ghost" hx-post="/actions/files/{{ f.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td>
 <td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>

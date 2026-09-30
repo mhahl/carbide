@@ -112,6 +112,8 @@ def create_app(deps: dict) -> web.Application:
                         actions.session_kill)
     app.router.add_post("/actions/squid/{id}/scan",
                         actions.squid_scan)
+    app.router.add_post("/actions/files/{id}/scan",
+                        actions.file_scan)
     app.router.add_post("/sensors/save", actions.sensor_save)
     app.router.add_post("/sensors/{id}/delete", actions.sensor_delete)
     app.router.add_post("/actions/sensors/{id}/push",

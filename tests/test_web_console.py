@@ -380,6 +380,31 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         resp = await self.client.post("/actions/squid/999/scan")
         self.assertIn("no such squid hit", await resp.text())
 
+    async def test_file_scan_button(self):
+        ref = await self._seed_session()
+        await self.db.set_setting("virustotal.api_key", "k" * 64)
+        await self.login()
+        body = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn("/actions/files/0/scan", body)
+        resp = await self.client.post("/actions/files/0/scan")
+        self.assertIn("submitted", await resp.text())
+        row = await self.db.get_vt_scan(ref.sha256)
+        self.assertEqual(row["status"], "pending")
+        resp = await self.client.post("/actions/files/0/scan")
+        self.assertIn("awaiting verdict", await resp.text())
+        await self.db.save_vt_scan(
+            ref.sha256, "malicious", malicious=7,
+            permalink="https://www.virustotal.com/gui/file/abc")
+        body = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn(
+            'href="https://www.virustotal.com/gui/file/abc"'
+            ">mimikatz.exe</a>", body)
+        self.assertNotIn("/actions/files/0/scan", body)
+        resp = await self.client.post("/actions/files/0/scan")
+        self.assertIn("already scanned: malicious", await resp.text())
+        resp = await self.client.post("/actions/files/999/scan")
+        self.assertIn("no such file", await resp.text())
+
     async def test_server_side_sorting(self):
         await self.db.ensure_session("sa", "s1", "1.1.1.1")
         await self.db.set_session_started(

@@ -175,6 +175,59 @@ async def squid_scan(request):
     return _alert(request, True, f"verdict: {row['status']}")
 
 
+@require_auth
+async def file_scan(request):
+    from ..vt import (VTAuthError, VTError, VTQuotaExceeded, VTQueue,
+                      build_client, resolve_vt_key)
+    user = request["user"]["username"]
+    db = request.app["db"]
+    cfg = request.app["cfg"]
+    try:
+        file_id = int(request.match_info["id"])
+    except ValueError:
+        return _alert(request, False, "bad file id")
+    row = await db.get_session_file(file_id)
+    if row is None:
+        return _alert(request, False, "no such file")
+    _fid, _sid, name, sha, size, _at = row
+    if not sha:
+        return _alert(request, False, "file has no stored content")
+    existing = await db.get_vt_scan(sha)
+    if existing is not None and existing["status"] in (
+            "malicious", "suspicious", "clean", "skipped"):
+        return _alert(request, True,
+                      f"already scanned: {existing['status']}")
+    if existing is not None and existing["status"] == "pending":
+        return _alert(request, True,
+                      "already submitted, awaiting verdict")
+    key = await resolve_vt_key(db, cfg)
+    if not key:
+        return _alert(request, False, "no api key set")
+    client = build_client(
+        cfg, db, transport=request.app.get("vt_transport"), api_key=key)
+    queue = VTQueue(db, request.app["blobs"], cfg, client=client)
+    try:
+        # Deliberately bypasses the sensor-origin auto-scan filter:
+        # an explicit operator click scans any stored blob.
+        scanned = await queue.scan_file(sha, size)
+    except VTAuthError:
+        log.info("console %s: file scan key rejected", user)
+        return _alert(request, False, "key rejected 401")
+    except VTQuotaExceeded:
+        return _alert(request, False, "daily quota exhausted")
+    except VTError as exc:
+        log.warning("console %s: file scan failed: %s", user, exc)
+        return _alert(request, False, f"scan failed: {exc}")
+    log.info("console %s: scanned file %.40s: %s", user, name,
+             scanned["status"])
+    if scanned["status"] == "pending":
+        return _alert(request, True,
+                      "submitted; verdict lands next worker pass")
+    if scanned["status"] == "skipped":
+        return _alert(request, True, f"skipped: {scanned['error']}")
+    return _alert(request, True, f"verdict: {scanned['status']}")
+
+
 # -- managed sensors -------------------------------------------------------------
 def _sensor_form(form) -> tuple:
     """Returns (record dict, error). Record holds DB-ready values."""
