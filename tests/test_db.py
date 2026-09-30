@@ -158,11 +158,13 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         row = await self.db.get_managed_sensor("s9")
         self.assertEqual(row["ssh_host"], "10.0.0.9")
         self.assertEqual(row["auth_passwords"], '["a"]')
+        self.assertEqual(row["image_tag"], "latest")
         await self.db.upsert_managed_sensor(
-            "s9", "10.0.0.10", listen_port=2223)
+            "s9", "10.0.0.10", listen_port=2223, image_tag="0.2.4")
         row = await self.db.get_managed_sensor("s9")
         self.assertEqual(row["ssh_host"], "10.0.0.10")
         self.assertEqual(row["listen_port"], 2223)
+        self.assertEqual(row["image_tag"], "0.2.4")
         self.assertEqual(
             [m["sensor_id"]
              for m in await self.db.list_managed_sensors()], ["s9"])
@@ -245,7 +247,8 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         # schema_version survives; sequences restart; db stays usable
         versions = await self.db._exec(
             "SELECT version FROM schema_version", fetch="all")
-        self.assertEqual({row[0] for row in versions}, {1, 2, 3, 4, 5})
+        self.assertEqual({row[0] for row in versions},
+                         {1, 2, 3, 4, 5, 6})
         self.assertEqual(await self.db.create_web_user("op2", "h"), 1)
         await self.db.migrate()
 

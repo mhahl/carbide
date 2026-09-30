@@ -128,12 +128,17 @@ async def session_kill(request):
 # -- managed sensors -------------------------------------------------------------
 def _sensor_form(form) -> tuple:
     """Returns (record dict, error). Record holds DB-ready values."""
+    from .sshmgmt import MgmtError, valid_image_tag
     sensor_id = (form.get("sensor_id") or "").strip()
     ssh_host = (form.get("ssh_host") or "").strip()
     if not sensor_id:
         return None, "sensor id required"
     if not ssh_host:
         return None, "ssh host required"
+    try:
+        image_tag = valid_image_tag(form.get("image_tag"))
+    except MgmtError as exc:
+        return None, str(exc)
     try:
         probability = float(form.get("accept_probability") or 0.05)
     except ValueError:
@@ -155,6 +160,7 @@ def _sensor_form(form) -> tuple:
         "auth_passwords": json.dumps(passwords),
         "accept_probability": probability,
         "notes": (form.get("notes") or "").strip(),
+        "image_tag": image_tag,
     }, ""
 
 
@@ -240,6 +246,35 @@ async def sensor_restart(request):
                        "output": result["output"]})
     return render(request, "_alert.html",
                   {"ok": True, "message": f"{sid} restarted",
+                   "output": result["output"]})
+
+
+@require_auth
+async def sensor_update(request):
+    sid = request.match_info["id"]
+    user = request["user"]["username"]
+    mgmt = _mgmt_or_error(request)
+    if mgmt is None:
+        return _alert(request, False,
+                      "sensor management not configured "
+                      "([sensor_mgmt] enabled + key_path)")
+    sensor = await request.app["db"].get_managed_sensor(sid)
+    if sensor is None:
+        return _alert(request, False, "no such managed sensor")
+    try:
+        result = await mgmt.update_image(sensor)
+    except Exception as exc:
+        return _alert(request, False, f"update failed: {exc}")
+    log.info("console %s: update %s image: %s", user, sid,
+             "ok" if result["ok"] else result["output"][-200:])
+    if not result["ok"]:
+        return render(request, "_alert.html",
+                      {"ok": False,
+                       "message": f"image update {sid} failed",
+                       "output": result["output"]})
+    return render(request, "_alert.html",
+                  {"ok": True,
+                   "message": f"{sid} image updated",
                    "output": result["output"]})
 
 

@@ -114,6 +114,8 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_post("/sensors/{id}/delete", actions.sensor_delete)
     app.router.add_post("/actions/sensors/{id}/push",
                         actions.sensor_push)
+    app.router.add_post("/actions/sensors/{id}/update",
+                        actions.sensor_update)
     app.router.add_post("/actions/sensors/{id}/restart",
                         actions.sensor_restart)
     app.router.add_post("/actions/sensors/{id}/provision",

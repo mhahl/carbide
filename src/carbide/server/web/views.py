@@ -512,7 +512,7 @@ async def sensor_new(request):
         "ssh_host": "", "ssh_port": 22, "ssh_user": "",
         "remote_dir": "", "listen_addr": "0.0.0.0", "listen_port": 2222,
         "server_host": "", "server_port": 8440, "passwords": "",
-        "accept_probability": 0.05, "notes": ""}
+        "accept_probability": 0.05, "notes": "", "image_tag": "latest"}
     return render(request, "sensor_form.html",
                   {"m": prefill, "is_new": True,
                    "error": request.query.get("error") or ""})

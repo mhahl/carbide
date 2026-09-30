@@ -388,11 +388,16 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
             "/sensors/save",
             data={"sensor_id": "s9", "ssh_host": "10.0.0.9",
                   "accept_probability": "0.1",
-                  "passwords": "a\nb"}, allow_redirects=False)
+                  "passwords": "a\nb",
+                  "image_tag": "0.2.4"}, allow_redirects=False)
         self.assertEqual(resp.status, 302)
         row = await self.db.get_managed_sensor("s9")
         self.assertEqual(row["ssh_host"], "10.0.0.9")
         self.assertEqual(row["auth_passwords"], '["a", "b"]')
+        self.assertEqual(row["image_tag"], "0.2.4")
+        body = await (await self.client.get("/sensors/s9")).text()
+        self.assertIn('name="image_tag" value="0.2.4"', body)
+        self.assertIn("/actions/sensors/s9/update", body)
         resp = await self.client.post(
             "/sensors/s9/delete", allow_redirects=False)
         self.assertEqual(resp.status, 302)

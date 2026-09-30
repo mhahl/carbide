@@ -9,7 +9,8 @@ from unittest import mock
 from carbide.common.config import validate
 from carbide.server.web import sshmgmt
 from carbide.server.web.sshmgmt import (
-    MgmtError, SensorManager, passwords_from_text, toml_str_list)
+    MgmtError, SensorManager, passwords_from_text, toml_str_list,
+    valid_image_tag)
 
 
 def make_config(**over):
@@ -32,7 +33,7 @@ SENSOR = {
     "listen_addr": "0.0.0.0", "listen_port": 2222,
     "server_host": "10.8.0.1", "server_port": 8440,
     "auth_passwords": '["password", "123456"]',
-    "accept_probability": 0.05,
+    "accept_probability": 0.05, "image_tag": "0.2.4",
 }
 
 
@@ -109,6 +110,19 @@ class MgmtTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("SENSOR_TOKEN=tok", env)
         self.assertIn("AUTH_PASSWORDS='\"password\", \"123456\"'", env)
         self.assertIn("ACCEPT_PROBABILITY=0.05", env)
+        self.assertIn("TAG=0.2.4", env)
+
+    def test_valid_image_tag(self):
+        self.assertEqual(valid_image_tag(None), "latest")
+        self.assertEqual(valid_image_tag(""), "latest")
+        self.assertEqual(valid_image_tag("  "), "latest")
+        self.assertEqual(valid_image_tag("0.2.4"), "0.2.4")
+        self.assertEqual(valid_image_tag("v1_beta.rc-1"), "v1_beta.rc-1")
+        for bad in ("a b", "a;b", "a/b", "-x", ".x", "x" * 129,
+                    "$(x)", "`x`"):
+            with self.subTest(tag=bad):
+                with self.assertRaises(MgmtError):
+                    valid_image_tag(bad)
 
     def test_files_dir_missing(self):
         mgr = SensorManager(make_config(files_dir="/tmp/nope-xyz"), "tok")
@@ -152,10 +166,32 @@ class MgmtTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cat >> .env", cmd)
         self.assertIn("AUTH_PASSWORDS='\"password\", \"123456\"'", cmd)
         self.assertIn("ACCEPT_PROBABILITY=0.05", cmd)
+        self.assertIn("TAG=0.2.4", cmd)
         # Push must pull (a changed image updates the container via
         # setup.sh's force-recreate); only the firewall stays skipped.
         self.assertIn("./setup.sh --skip-firewall", cmd)
         self.assertNotIn("--skip-pull", cmd)
+
+    async def test_update_image(self):
+        mgr = SensorManager(make_config(), "tok")
+        captured = {}
+
+        async def fake_connect(*args, **kwargs):
+            conn = FakeConn()
+            captured["conn"] = conn
+            return conn
+
+        with mock.patch.object(sshmgmt.asyncssh, "connect",
+                               fake_connect):
+            result = await mgr.update_image(SENSOR)
+        self.assertTrue(result["ok"])
+        cmd = captured["conn"].runs[0]
+        # Tag persisted via --tag; no config fragment pushed.
+        self.assertIn("./setup.sh --tag 0.2.4 --skip-firewall", cmd)
+        self.assertNotIn("cat >>", cmd)
+        self.assertNotIn("--skip-pull", cmd)
+        with self.assertRaises(MgmtError):
+            await mgr.update_image({**SENSOR, "image_tag": "a;b"})
 
     async def test_provision(self):
         tmp = tempfile.TemporaryDirectory()
@@ -179,6 +215,7 @@ class MgmtTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(conn.sftp.puts), 4)
         env = conn.sftp.writes["/root/s9/.env"]
         self.assertIn("SENSOR_ID=s1", env)
+        self.assertIn("TAG=0.2.4", env)
         self.assertTrue(any("./setup.sh" in run and "--skip" not in run
                             for run in conn.runs))
 

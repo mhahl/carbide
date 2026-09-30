@@ -71,6 +71,11 @@
 <label class="label" for="sf-server-port">Server port</label>
 <input id="sf-server-port" type="number" name="server_port" value="{{ m.server_port }}" min="1" max="65535" class="input input-sm w-full">
 </div>
+<div>
+<label class="label" for="sf-image-tag">Image tag</label>
+<input id="sf-image-tag" type="text" name="image_tag" value="{{ m.image_tag }}" placeholder="latest" autocomplete="off" spellcheck="false" class="input input-sm w-full font-mono">
+<p class="label">quay.io/sigaint/carbide tag; push + update pull it.</p>
+</div>
 </div>
 </fieldset>
 <fieldset class="fieldset">

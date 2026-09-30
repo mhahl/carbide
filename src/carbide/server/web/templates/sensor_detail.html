@@ -13,6 +13,7 @@
 <div class="flex flex-wrap gap-2">
 <button class="btn btn-sm" hx-post="/actions/sensors/{{ m.sensor_id }}/push" hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Push saved config to {{ m.sensor_id }} and restart its stack?">Push config + restart</button>
 <button class="btn btn-sm" hx-post="/actions/sensors/{{ m.sensor_id }}/restart" hx-target="#action-status" hx-swap="innerHTML">Restart stack</button>
+<button class="btn btn-sm" hx-post="/actions/sensors/{{ m.sensor_id }}/update" hx-target="#action-status" hx-swap="innerHTML" hx-confirm="Pull image tag {{ m.image_tag }} on {{ m.sensor_id }} and recreate its container?">Pull + update image</button>
 <button class="btn btn-sm btn-warning" hx-post="/actions/sensors/{{ m.sensor_id }}/provision" hx-target="#provision-box" hx-swap="innerHTML" hx-confirm="Copy files and run full remote setup on {{ m.ssh_host }}?">Provision host</button>
 </div>
 <div id="provision-box" aria-live="polite"></div>

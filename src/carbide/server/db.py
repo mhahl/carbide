@@ -178,6 +178,10 @@ MIGRATIONS = [
     UPDATE session_files SET origin = 'forensics'
         WHERE name LIKE 'container:%';
     """),
+    (6, """
+    ALTER TABLE managed_sensors ADD COLUMN IF NOT EXISTS image_tag TEXT
+        NOT NULL DEFAULT 'latest';
+    """),
 ]
 
 
@@ -751,7 +755,8 @@ class Database:
     _MANAGED_COLS = ("sensor_id", "ssh_host", "ssh_port", "ssh_user",
                      "remote_dir", "listen_addr", "listen_port",
                      "server_host", "server_port", "auth_passwords",
-                     "accept_probability", "notes", "updated_at")
+                     "accept_probability", "notes", "image_tag",
+                     "updated_at")
 
     @classmethod
     def _managed_row(cls, row):
@@ -766,12 +771,14 @@ class Database:
                                     server_port: int = 8440,
                                     auth_passwords: str = "[]",
                                     accept_probability: float = 0.05,
-                                    notes: str = ""):
+                                    notes: str = "",
+                                    image_tag: str = "latest"):
         await self._exec(
             "INSERT INTO managed_sensors (sensor_id, ssh_host, ssh_port, "
             "ssh_user, remote_dir, listen_addr, listen_port, server_host, "
-            "server_port, auth_passwords, accept_probability, notes) "
-            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "server_port, auth_passwords, accept_probability, notes, "
+            "image_tag) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT (sensor_id) DO UPDATE SET ssh_host = EXCLUDED.ssh_host, "
             "ssh_port = EXCLUDED.ssh_port, ssh_user = EXCLUDED.ssh_user, "
             "remote_dir = EXCLUDED.remote_dir, "
@@ -781,16 +788,18 @@ class Database:
             "server_port = EXCLUDED.server_port, "
             "auth_passwords = EXCLUDED.auth_passwords, "
             "accept_probability = EXCLUDED.accept_probability, "
-            "notes = EXCLUDED.notes, updated_at = now()",
+            "notes = EXCLUDED.notes, image_tag = EXCLUDED.image_tag, "
+            "updated_at = now()",
             (sensor_id, ssh_host, ssh_port, ssh_user, remote_dir,
              listen_addr, listen_port, server_host, server_port,
-             auth_passwords, accept_probability, notes))
+             auth_passwords, accept_probability, notes, image_tag))
 
     async def get_managed_sensor(self, sensor_id: str):
         row = await self._exec(
             "SELECT sensor_id, ssh_host, ssh_port, ssh_user, remote_dir, "
             "listen_addr, listen_port, server_host, server_port, "
-            "auth_passwords, accept_probability, notes, updated_at "
+            "auth_passwords, accept_probability, notes, image_tag, "
+            "updated_at "
             "FROM managed_sensors WHERE sensor_id = %s", (sensor_id,),
             fetch="one")
         return self._managed_row(row) if row else None
@@ -799,7 +808,8 @@ class Database:
         rows = await self._exec(
             "SELECT sensor_id, ssh_host, ssh_port, ssh_user, remote_dir, "
             "listen_addr, listen_port, server_host, server_port, "
-            "auth_passwords, accept_probability, notes, updated_at "
+            "auth_passwords, accept_probability, notes, image_tag, "
+            "updated_at "
             "FROM managed_sensors ORDER BY sensor_id", fetch="all")
         return [self._managed_row(r) for r in rows]
 

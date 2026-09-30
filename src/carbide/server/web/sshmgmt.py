@@ -8,6 +8,7 @@ SFTP, writes the remote ``.env``, and runs setup end to end.
 import json
 import logging
 import os
+import re
 import secrets
 
 import asyncssh
@@ -17,9 +18,23 @@ log = logging.getLogger("carbide.server.mgmt")
 SENSOR_FILES = ("compose.yml", "config.toml.tmpl", ".env.example",
                 "setup.sh")
 
+TAG_RE = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}")
+
 
 class MgmtError(Exception):
     pass
+
+
+def valid_image_tag(tag) -> str:
+    """Console-managed sensor image tag, blank defaulting to 'latest'.
+
+    Raises MgmtError unless the tag is a plain docker tag — also the
+    shell-safety gate, since tags interpolate into remote commands.
+    """
+    tag = (tag or "").strip() or "latest"
+    if not TAG_RE.fullmatch(tag):
+        raise MgmtError(f"bad image tag {tag!r}")
+    return tag
 
 
 def toml_str_list(passwords: list) -> str:
@@ -92,13 +107,17 @@ class SensorManager:
         return {"ok": result.exit_status == 0,
                 "exit": result.exit_status, "output": output[-6000:]}
 
+    @staticmethod
+    def _tag(sensor: dict) -> str:
+        return valid_image_tag(sensor.get("image_tag"))
+
     def render_env(self, sensor: dict) -> str:
         try:
             passwords = json.loads(sensor["auth_passwords"] or "[]")
         except ValueError:
             passwords = []
         lines = [
-            "TAG=latest",
+            f"TAG={self._tag(sensor)}",
             f"SERVER_HOST={sensor['server_host']}",
             f"SERVER_PORT={sensor['server_port']}",
             f"SENSOR_ID={sensor['sensor_id']}",
@@ -143,6 +162,7 @@ class SensorManager:
             passwords = []
         marker = f"CARBIDE_EOF_{secrets.token_hex(4)}"
         fragment = "\n".join([
+            f"TAG={self._tag(sensor)}",
             f"AUTH_PASSWORDS='{toml_str_list(passwords)}'",
             f"ACCEPT_PROBABILITY={sensor['accept_probability']}",
             f"LISTEN_ADDR={sensor['listen_addr']}",
@@ -158,9 +178,24 @@ class SensorManager:
                        "./setup.sh --skip-firewall")
             return await self._run(conn, chained, timeout=900)
 
+    async def update_image(self, sensor: dict) -> dict:
+        """Pull the managed image tag and recreate the remote container.
+
+        No config is pushed: setup.sh --tag persists TAG, pulls, and
+        its force-recreate swaps the container when the pull changed
+        the image."""
+        tag = self._tag(sensor)
+        log.info("mgmt: updating sensor %s image to %s",
+                 sensor["sensor_id"], tag)
+        async with await self._connect(sensor) as conn:
+            cmd = (f"cd {sensor['remote_dir']} && "
+                   f"./setup.sh --tag {tag} --skip-firewall")
+            return await self._run(conn, cmd, timeout=900)
+
     async def provision(self, sensor: dict) -> dict:
         """Ship compose files, write .env, run full remote setup."""
         base = self.files_dir()
+        env = self.render_env(sensor)  # validates the image tag first
         log.info("mgmt: provisioning sensor %s on %s",
                  sensor["sensor_id"], sensor["ssh_host"])
         async with await self._connect(sensor) as conn:
@@ -176,7 +211,7 @@ class SensorManager:
                     async with sftp.open(
                             f"{sensor['remote_dir']}/.env", "w") as fh:
                         # Text mode: asyncssh encodes str itself.
-                        await fh.write(self.render_env(sensor))
+                        await fh.write(env)
             except Exception as exc:
                 return {"ok": False, "exit": -1,
                         "output": f"sftp failed: {exc}"}

@@ -366,7 +366,8 @@ class FakeDatabase:
                                     listen_addr="0.0.0.0", listen_port=2222,
                                     server_host="", server_port=8440,
                                     auth_passwords="[]",
-                                    accept_probability=0.05, notes=""):
+                                    accept_probability=0.05, notes="",
+                                    image_tag="latest"):
         if not hasattr(self, "managed"):
             self.managed = {}
         self.managed[sensor_id] = {
@@ -376,7 +377,7 @@ class FakeDatabase:
             "listen_port": listen_port, "server_host": server_host,
             "server_port": server_port, "auth_passwords": auth_passwords,
             "accept_probability": accept_probability, "notes": notes,
-            "updated_at": utcnow()}
+            "image_tag": image_tag, "updated_at": utcnow()}
 
     async def get_managed_sensor(self, sensor_id):
         row = getattr(self, "managed", {}).get(sensor_id)
