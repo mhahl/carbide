@@ -24,8 +24,8 @@
 {% if intel and intel.status == "ok" %}
 <p class="text-sm text-base-content/60">Scanned {{ intel.scanned_at|ts }}{% if intel.rdns %} · {{ intel.rdns }}{% endif %}.</p>
 {% if ports %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col" class="text-right">Port</th><th scope="col">Proto</th><th scope="col">Service</th><th scope="col">Version</th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col" class="text-right" data-sort-type="number">Port</th><th scope="col">Proto</th><th scope="col">Service</th><th scope="col">Version</th></tr></thead>
 <tbody>
 {% for p in ports %}
 <tr class="hover:bg-base-200"><td class="text-right tabular-nums">{{ p.port }}</td><td>{{ p.proto }}</td><td class="font-mono">{{ p.service or "—" }}</td><td class="font-mono">{{ p.version or "—" }}</td></tr>
@@ -49,13 +49,13 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ files|length }}</span>
 </div>
 {% if files %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Name</th><th scope="col">Session</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Name</th><th scope="col">Session</th><th scope="col" class="text-right" data-sort-type="number">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th></tr></thead>
 <tbody>
 {% for f in files %}
 <tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td>
 <td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ f.session_id }}">{{ f.session_id[:12] }}</a></td>
-<td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
+<td class="text-right tabular-nums" data-sort-value="{{ f.size }}">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
 <td>{% include "_verdict.html" %}</td></tr>
 {% endfor %}
 </tbody></table></div>
@@ -72,7 +72,7 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ sessions|length }}</span>
 </div>
 {% if sessions %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
 <thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Started</th><th scope="col">Ended</th></tr></thead>
 <tbody>
 {% for s in sessions %}

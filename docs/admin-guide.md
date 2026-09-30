@@ -222,8 +222,11 @@ normally live on separate hosts; co-located trials need distinct
 Exposure: the console binds the container-only gateway by default
 (`WEB_BIND=10.89.0.1`), like the API. To reach it from elsewhere, bind
 a VPN address (`--web-bind`) plus `--allow-subnet` rules — setup opens
-both the API and console ports to those subnets and warns on unfenced
-binds. There is no TLS terminator in the stack; keep it on trusted
+the API, console, and affinity-container SSH range
+(`[podman] port_range_start..end`, default `22000-22100`) to those
+subnets and warns on unfenced binds. Sensors proxy attacker sessions
+into `SSH_HOST:<container port>`, so a sensor whose subnet lacks the
+range shows linked + healthy API but refused container connections. There is no TLS terminator in the stack; keep it on trusted
 networks or front it with your own reverse proxy.
 
 ## Operate

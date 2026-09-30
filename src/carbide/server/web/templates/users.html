@@ -10,8 +10,8 @@
 {% if notice %}<div class="alert alert-success alert-soft" role="status"><span>{{ notice }}</span></div>{% endif %}
 <section class="card card-border bg-base-100" aria-label="Console users">
 <div class="card-body p-4 gap-2">
-<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular-nums">
-<thead><tr><th scope="col">User</th><th scope="col">Created</th><th scope="col">State</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+<div class="overflow-x-auto"><table data-sortable class="table table-sm table-zebra tabular-nums">
+<thead><tr><th scope="col">User</th><th scope="col">Created</th><th scope="col">State</th><th scope="col" data-sort="off"><span class="sr-only">Actions</span></th></tr></thead>
 <tbody>
 {% for u in rows %}
 <tr class="hover:bg-base-200">

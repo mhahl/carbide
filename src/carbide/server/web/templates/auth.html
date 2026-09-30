@@ -31,7 +31,7 @@
 <section class="card card-border bg-base-100" aria-label="Auth attempts">
 <div class="card-body p-4 gap-2">
 <div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Sensor</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th><th scope="col">Session</th></tr></thead>
+<thead><tr><th scope="col" aria-sort="{{ sort_links.at.aria }}"><a class="link" href="/auth?{{ sort_links.at.url }}">Time {{ sort_links.at.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.sensor_id.aria }}"><a class="link" href="/auth?{{ sort_links.sensor_id.url }}">Sensor {{ sort_links.sensor_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.username.aria }}"><a class="link" href="/auth?{{ sort_links.username.url }}">Username {{ sort_links.username.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.password.aria }}"><a class="link" href="/auth?{{ sort_links.password.url }}">Password {{ sort_links.password.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.accepted.aria }}"><a class="link" href="/auth?{{ sort_links.accepted.url }}">Result {{ sort_links.accepted.ind }}</a></th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for a in rows %}
 <tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ a.at|ts }}</td><td>{{ a.sensor_id }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
@@ -63,8 +63,8 @@
 </div>
 <section class="card card-border bg-base-100" aria-label="Container credentials">
 <div class="card-body p-4 gap-2">
-<div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Container</th><th scope="col" class="text-right">Port</th><th scope="col">Password</th><th scope="col">Active</th></tr></thead>
+<div class="overflow-x-auto max-h-160"><table data-sortable class="table table-sm table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Container</th><th scope="col" class="text-right" data-sort-type="number">Port</th><th scope="col">Password</th><th scope="col">Active</th></tr></thead>
 <tbody>
 {% for c in creds %}
 <tr class="hover:bg-base-200"><td>{{ c.sensor_id }}</td><td class="font-mono">{{ c.attacker_ip }}</td>

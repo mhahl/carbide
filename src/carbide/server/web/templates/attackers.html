@@ -9,7 +9,7 @@
 <section class="card card-border bg-base-100" aria-label="Attackers">
 <div class="card-body p-4 gap-2">
 <div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">IP</th><th scope="col" class="text-right">Sessions</th><th scope="col">Last seen</th><th scope="col" class="text-right">Files</th><th scope="col" class="text-right">Malicious</th><th scope="col">nmap</th></tr></thead>
+<thead><tr><th scope="col" aria-sort="{{ sort_links.attacker_ip.aria }}"><a class="link" href="/attackers?{{ sort_links.attacker_ip.url }}">IP {{ sort_links.attacker_ip.ind }}</a></th><th scope="col" class="text-right" aria-sort="{{ sort_links.sessions.aria }}"><a class="link" href="/attackers?{{ sort_links.sessions.url }}">Sessions {{ sort_links.sessions.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.last_seen.aria }}"><a class="link" href="/attackers?{{ sort_links.last_seen.url }}">Last seen {{ sort_links.last_seen.ind }}</a></th><th scope="col" class="text-right" aria-sort="{{ sort_links.files.aria }}"><a class="link" href="/attackers?{{ sort_links.files.url }}">Files {{ sort_links.files.ind }}</a></th><th scope="col" class="text-right" aria-sort="{{ sort_links.malicious.aria }}"><a class="link" href="/attackers?{{ sort_links.malicious.url }}">Malicious {{ sort_links.malicious.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.intel.aria }}"><a class="link" href="/attackers?{{ sort_links.intel.url }}">nmap {{ sort_links.intel.ind }}</a></th></tr></thead>
 <tbody>
 {% for a in rows %}
 <tr class="hover:bg-base-200"><td class="font-mono"><a class="link" href="/attackers/{{ a.ip }}">{{ a.ip }}</a></td>

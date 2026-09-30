@@ -8,6 +8,14 @@ def utcnow():
     return datetime.datetime.now(datetime.timezone.utc)
 
 
+def _ordered(rows, key, descending):
+    """Sort with None values last in both directions (mirrors SQL)."""
+    dated = sorted((r for r in rows if key(r) is not None), key=key)
+    if descending:
+        dated.reverse()
+    return dated + [r for r in rows if key(r) is None]
+
+
 class FakeDatabase:
     def __init__(self):
         self.sensors = {}
@@ -201,15 +209,29 @@ class FakeDatabase:
                 s["over_quota"], s["started_at"], s["ended_at"],
                 s["end_reason"])
 
+    _SESSION_SORT_KEYS = {
+        "session_id": lambda s: s["session_id"],
+        "sensor_id": lambda s: s["sensor_id"],
+        "attacker_ip": lambda s: s["attacker_ip"],
+        "username": lambda s: s["username"],
+        "container_id": lambda s: s["container_id"],
+        "started_at": lambda s: s["started_at"],
+        "ended_at": lambda s: s["ended_at"],
+    }
+
     async def list_sessions(self, sensor_id=None, ip=None, open_only=False,
-                            limit=100, offset=0):
+                            require_container=False,
+                            limit=100, offset=0, sort="started_at",
+                            descending=True):
         rows = [s for s in self.sessions.values()
                 if (not sensor_id or s["sensor_id"] == sensor_id)
                 and (not ip or s["attacker_ip"] == ip)
-                and (not open_only or s["ended_at"] is None)]
-        rows.sort(key=lambda s: (
-            s["started_at"] is None, s["started_at"], s["session_id"]))
-        rows.reverse()
+                and (not open_only or s["ended_at"] is None)
+                and (not require_container or s["container_id"])]
+        key = self._SESSION_SORT_KEYS.get(sort,
+                                          self._SESSION_SORT_KEYS[
+                                              "started_at"])
+        rows = _ordered(rows, key, descending)
         return [self._session_tuple(s)
                 for s in rows[offset:offset + limit]]
 
@@ -224,15 +246,27 @@ class FakeDatabase:
         return [(idx, f[1], f[2], f[3], f[4])
                 for idx, f in enumerate(self.files) if f[0] == session_id]
 
+    _ATTEMPT_SORT_KEYS = {
+        "id": lambda r: r[0],
+        "at": lambda r: r[7],
+        "sensor_id": lambda r: r[2],
+        "username": lambda r: r[3],
+        "password": lambda r: r[4],
+        "accepted": lambda r: r[5],
+    }
+
     async def list_auth_attempts(self, session_id=None, sensor_id=None,
                                  username=None, accepted=None,
-                                 limit=200, offset=0):
+                                 limit=200, offset=0, sort="id",
+                                 descending=True):
         rows = [(idx,) + a for idx, a in enumerate(self.attempts)
                 if (not session_id or a[0] == session_id)
                 and (not sensor_id or a[1] == sensor_id)
                 and (not username or a[2] == username)
                 and (accepted is None or a[4] == accepted)]
-        rows.reverse()
+        key = self._ATTEMPT_SORT_KEYS.get(sort,
+                                          self._ATTEMPT_SORT_KEYS["id"])
+        rows = _ordered(rows, key, descending)
         return rows[offset:offset + limit]
 
     async def list_squid_hits(self, session_id=None, sensor_id=None,
@@ -403,7 +437,17 @@ class FakeDatabase:
             "open_ports": open_ports, "raw_xml": raw_xml, "error": error,
             "scanned_at": utcnow()}
 
-    async def list_attackers(self, limit=200, offset=0):
+    _ATTACKER_SORT_KEYS = {
+        "attacker_ip": lambda r: r[0],
+        "sessions": lambda r: r[1],
+        "last_seen": lambda r: r[2],
+        "files": lambda r: r[3],
+        "malicious": lambda r: r[4],
+        "intel": lambda r: r[5],
+    }
+
+    async def list_attackers(self, limit=200, offset=0, sort="last_seen",
+                             descending=True):
         by_ip = {}
         for s in self.sessions.values():
             ip = s["attacker_ip"]
@@ -426,9 +470,10 @@ class FakeDatabase:
             intel = self.intel.get(ip, {}).get("status")
             rows.append((ip, entry["sessions"], entry["seen"], len(files),
                          mal, intel))
-        floor = datetime.datetime.min.replace(
-            tzinfo=datetime.timezone.utc)
-        rows.sort(key=lambda r: r[2] or floor, reverse=True)
+        key = self._ATTACKER_SORT_KEYS.get(sort,
+                                             self._ATTACKER_SORT_KEYS[
+                                                 "last_seen"])
+        rows = _ordered(rows, key, descending)
         return rows[offset:offset + limit]
 
     async def list_files_by_ip(self, ip, limit=500):

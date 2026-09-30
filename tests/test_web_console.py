@@ -163,6 +163,20 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         resp = await self.client.get("/attackers/8.8.8.8")
         self.assertEqual(resp.status, 404)
 
+    async def test_sessions_hide_containerless_by_default(self):
+        await self._seed_session("withbox")
+        await self.db.set_session_container("withbox", "c1", True)
+        await self._seed_session("nobox")
+        await self.login()
+        body = await (await self.client.get("/sessions")).text()
+        self.assertIn("withbox", body)
+        self.assertNotIn("nobox", body)
+        self.assertIn('name="empty"', body)
+        body = await (
+            await self.client.get("/sessions?empty=1")).text()
+        self.assertIn("withbox", body)
+        self.assertIn("nobox", body)
+
     async def test_attackers_and_verdicts(self):
         ref = await self._seed_session()
         await self.db.save_vt_scan(
@@ -246,6 +260,29 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
             "/settings/virustotal/verify", allow_redirects=False)
         self.assertEqual(resp.status, 302)
         self.assertIn("error=key+rejected+401", resp.headers["Location"])
+
+    async def test_server_side_sorting(self):
+        await self.db.ensure_session("sa", "s1", "1.1.1.1")
+        await self.db.set_session_started(
+            "sa", "zed", utcnow(), "1.1.1.1")
+        await self.db.set_session_container("sa", "c-sa", True)
+        await self.db.ensure_session("sb", "s1", "2.2.2.2")
+        await self.db.set_session_started(
+            "sb", "anna", utcnow(), "2.2.2.2")
+        await self.db.set_session_container("sb", "c-sb", True)
+        await self.login()
+        body = await (await self.client.get(
+            "/sessions?sort=username&dir=asc")).text()
+        self.assertLess(body.index("anna"), body.index("zed"))
+        self.assertIn("aria-sort=\"ascending\"", body)
+        body = await (await self.client.get(
+            "/sessions?sort=nope&dir=desc")).text()
+        self.assertIn("aria-sort=\"descending\"", body)
+        body = await (await self.client.get(
+            "/attackers?sort=attacker_ip&dir=asc")).text()
+        self.assertLess(body.index("1.1.1.1"), body.index("2.2.2.2"))
+        body = await (await self.client.get("/attackers/1.1.1.1")).text()
+        self.assertIn("data-sortable", body)
 
     async def test_empty_states_and_reset_modal(self):
         await self.login()

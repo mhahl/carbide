@@ -95,7 +95,7 @@
 <h2 class="font-medium">Recent auth attempts</h2>
 <a class="link text-sm ms-auto" href="/auth">All attempts</a>
 </div>
-<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular-nums">
+<div class="overflow-x-auto"><table data-sortable class="table table-xs table-zebra tabular-nums">
 <thead><tr><th scope="col">Time</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Result</th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for a in auth %}
@@ -118,8 +118,8 @@
 <section class="card card-border bg-base-100" aria-label="Recent Squid hits">
 <div class="card-body p-4 gap-2">
 <h2 class="font-medium">Recent Squid hits</h2>
-<div class="overflow-x-auto"><table class="table table-xs table-zebra tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right">Status</th></tr></thead>
+<div class="overflow-x-auto"><table data-sortable class="table table-xs table-zebra tabular-nums">
+<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th></tr></thead>
 <tbody>
 {% for h in squid %}
 <tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url[:80] }}</td><td class="text-right tabular-nums">{{ h.status }}</td></tr>

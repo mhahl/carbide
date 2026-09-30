@@ -1,5 +1,5 @@
-/* Carbide console shared behavior: theme manager + log tail.
-   Page-specific wiring stays inline in its template. */
+/* Carbide console shared behavior: theme manager + log tail + sortable
+   tables. Page-specific wiring stays inline in its template. */
 (function () {
   "use strict";
 
@@ -118,5 +118,146 @@
     if (document.getElementById("logbox")) {
       window.initLogTail();
     }
+  });
+
+  /* Sortable tables: <table data-sortable> gets click-to-sort headers.
+     Opt a column out with data-sort="off" on the <th>; force a type with
+     data-sort-type="number|text"; override a cell value with
+     data-sort-value on the <td>. Clicks cycle ascending, descending,
+     then back to the server order. Paginated tables must NOT use this
+     (it would sort one page); they sort server-side via header links. */
+  function cellValue(td) {
+    if (td.hasAttribute("data-sort-value")) {
+      return td.getAttribute("data-sort-value");
+    }
+    return (td.textContent || "").trim();
+  }
+
+  function compareText(a, b) {
+    return String(a).localeCompare(String(b), undefined,
+                                   { numeric: true, sensitivity: "base" });
+  }
+
+  function compareValues(a, b, forced) {
+    if (forced !== "text") {
+      var an = parseFloat(a);
+      var bn = parseFloat(b);
+      if (a !== "" && b !== "" && !isNaN(an) && !isNaN(bn)) {
+        return an - bn;
+      }
+    }
+    if (forced === "number") {
+      return 0;
+    }
+    return compareText(a, b);
+  }
+
+  function sortTable(table, th) {
+    var headers = th.parentNode.children;
+    var index = Array.prototype.indexOf.call(headers, th);
+    var type = th.getAttribute("data-sort-type") || "";
+    var state = table.getAttribute("data-sort-state") || "";
+    var dir = 1;
+    if (state === index + ":asc") {
+      dir = -1;
+    } else if (state === index + ":desc") {
+      dir = 0;
+    }
+    var tbody = table.tBodies[0];
+    if (!tbody) {
+      return;
+    }
+    var rows = Array.prototype.slice.call(tbody.rows);
+    rows.forEach(function (row, i) {
+      if (row.getAttribute("data-sort-pos") === null) {
+        row.setAttribute("data-sort-pos", String(i));
+      }
+    });
+    rows.sort(function (ra, rb) {
+      if (dir === 0) {
+        return (+ra.getAttribute("data-sort-pos") || 0) -
+               (+rb.getAttribute("data-sort-pos") || 0);
+      }
+      var va = ra.cells.length > index ? cellValue(ra.cells[index]) : "";
+      var vb = rb.cells.length > index ? cellValue(rb.cells[index]) : "";
+      var out = compareValues(va, vb, type);
+      if (out === 0) {
+        out = (+ra.getAttribute("data-sort-pos") || 0) -
+              (+rb.getAttribute("data-sort-pos") || 0);
+      }
+      return out * dir;
+    });
+    rows.forEach(function (row) {
+      tbody.appendChild(row);
+    });
+    for (var i = 0; i < headers.length; i++) {
+      var h = headers[i];
+      if (h.className.indexOf("sortable") === -1) {
+        continue;
+      }
+      var active = dir !== 0 && h === th;
+      h.setAttribute("aria-sort", active ?
+                     (dir === 1 ? "ascending" : "descending") : "none");
+      var ind = h.querySelector(".sort-ind");
+      if (ind) {
+        ind.textContent = active ? (dir === 1 ? "▲" : "▼") : "";
+      }
+    }
+    table.setAttribute("data-sort-state", dir === 0 ? "" :
+                       index + ":" + (dir === 1 ? "asc" : "desc"));
+  }
+
+  function enhanceTables(root) {
+    var tables = (root || document).querySelectorAll(
+      "table[data-sortable]");
+    for (var t = 0; t < tables.length; t++) {
+      var head = tables[t].tHead;
+      if (!head || !head.rows.length) {
+        continue;
+      }
+      var headers = head.rows[0].children;
+      for (var i = 0; i < headers.length; i++) {
+        (function (th) {
+          if (th.getAttribute("data-sort") === "off" ||
+              th.className.indexOf("sortable") !== -1) {
+            return;
+          }
+          var btn = document.createElement("button");
+          btn.setAttribute("type", "button");
+          btn.className = "sort-btn cursor-pointer";
+          btn.setAttribute("aria-label", "sort by " +
+                           (th.textContent || "").trim());
+          while (th.firstChild) {
+            btn.appendChild(th.firstChild);
+          }
+          var ind = document.createElement("span");
+          ind.className = "sort-ind";
+          ind.setAttribute("aria-hidden", "true");
+          btn.appendChild(document.createTextNode(" "));
+          btn.appendChild(ind);
+          th.appendChild(btn);
+          th.className += (th.className ? " " : "") + "sortable";
+          th.setAttribute("aria-sort", "none");
+        })(headers[i]);
+      }
+    }
+  }
+
+  document.addEventListener("click", function (event) {
+    var btn = event.target.closest ?
+      event.target.closest("table[data-sortable] th.sortable > button") :
+      null;
+    if (!btn) {
+      return;
+    }
+    event.preventDefault();
+    sortTable(btn.closest("table"), btn.parentNode);
+  });
+
+  document.addEventListener("DOMContentLoaded", function () {
+    enhanceTables(document);
+  });
+  document.addEventListener("htmx:afterSwap", function (event) {
+    enhanceTables(event.target);
   });
 })();

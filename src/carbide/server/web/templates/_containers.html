@@ -9,8 +9,8 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ containers|length }}</span>
 </div>
 {% if containers %}
-<div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Name</th><th scope="col">ID</th><th scope="col">Image</th><th scope="col">Status</th><th scope="col"><span class="sr-only">Actions</span></th></tr></thead>
+<div class="overflow-x-auto max-h-160"><table data-sortable class="table table-sm table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Name</th><th scope="col">ID</th><th scope="col">Image</th><th scope="col">Status</th><th scope="col" data-sort="off"><span class="sr-only">Actions</span></th></tr></thead>
 <tbody>
 {% for c in containers %}
 <tr class="hover:bg-base-200"><td class="font-mono">{{ c.name }}{% if c.labels and c.labels.get("carbide") %} <span class="badge badge-xs">carbide</span>{% endif %}</td>
@@ -37,11 +37,11 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ images|length }}</span>
 </div>
 {% if images %}
-<div class="overflow-x-auto max-h-96"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">ID</th><th scope="col">Tags</th><th scope="col" class="text-right">Size</th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-sm table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">ID</th><th scope="col">Tags</th><th scope="col" class="text-right" data-sort-type="number">Size</th></tr></thead>
 <tbody>
 {% for i in images %}
-<tr class="hover:bg-base-200"><td class="font-mono">{{ i.id }}</td><td class="font-mono text-xs break-all">{{ i.tags|join(", ") }}</td><td class="text-right tabular-nums">{{ i.size|filesizeformat }}</td></tr>
+<tr class="hover:bg-base-200"><td class="font-mono">{{ i.id }}</td><td class="font-mono text-xs break-all">{{ i.tags|join(", ") }}</td><td class="text-right tabular-nums" data-sort-value="{{ i.size }}">{{ i.size|filesizeformat }}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}
@@ -56,7 +56,7 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ networks|length }}</span>
 </div>
 {% if networks %}
-<div class="overflow-x-auto max-h-96"><table class="table table-sm table-zebra table-pin-rows">
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-sm table-zebra table-pin-rows">
 <thead><tr><th scope="col">Name</th><th scope="col">Driver</th><th scope="col">Subnets</th></tr></thead>
 <tbody>
 {% for n in networks %}

@@ -223,7 +223,19 @@ if [ "$SKIP_FIREWALL" -eq 0 ] && [ "${#ALLOW_SUBNETS[@]}" -gt 0 ]; then
     echo "warning: firewall-cmd missing, skipping firewall rules" >&2
   else
     systemctl enable --now firewalld >/dev/null 2>&1 || true
-    for port in "${API_PORT:-8440}" "${WEB_PORT:-8080}"; do
+    # Affinity container sshd ports: podman publishes each container on
+    # a host port in [podman] port_range_start..end, and sensors proxy
+    # attacker sessions into SSH_HOST:<that port> — so the same sensor
+    # subnets need the range, not just API + console. Read the range
+    # from the config rendered above; fall back to the config.py
+    # defaults (22000-22100) when unset.
+    POOL_PORTS=$(awk '/^\[/ { podman = ($0 == "[podman]"); next }
+      podman { sub(/#.*/, "");
+        if ($1 == "port_range_start") s = $NF;
+        if ($1 == "port_range_end") e = $NF }
+      END { if (s != "" && e != "") print s "-" e }' config.toml)
+    : "${POOL_PORTS:=22000-22100}"
+    for port in "${API_PORT:-8440}" "${WEB_PORT:-8080}" "$POOL_PORTS"; do
       for net in "${ALLOW_SUBNETS[@]}"; do
         rule="rule family=\"ipv4\" source address=\"$net\" port port=\"$port\" protocol=\"tcp\" accept"
         firewall-cmd --query-rich-rule="$rule" >/dev/null || \

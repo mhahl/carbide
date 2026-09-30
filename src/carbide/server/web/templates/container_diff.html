@@ -21,8 +21,8 @@
 <section class="card card-border bg-base-100" aria-label="Filesystem changes">
 <div class="card-body p-4 gap-2">
 {% if rows %}
-<div class="overflow-x-auto max-h-160"><table class="table table-xs table-zebra table-pin-rows">
-<thead><tr><th scope="col"><span class="sr-only">Change</span></th><th scope="col">Path</th><th scope="col"><span class="sr-only">View</span></th></tr></thead>
+<div class="overflow-x-auto max-h-160"><table data-sortable class="table table-xs table-zebra table-pin-rows">
+<thead><tr><th scope="col"><span class="sr-only">Change</span></th><th scope="col">Path</th><th scope="col" data-sort="off"><span class="sr-only">View</span></th></tr></thead>
 <tbody>
 {% for r in rows %}
 <tr class="hover:bg-base-200"><td>{% if r.kind == "added" %}<span class="badge badge-success badge-soft badge-xs">A</span>{% elif r.kind == "deleted" %}<span class="badge badge-error badge-soft badge-xs">D</span>{% else %}<span class="badge badge-warning badge-soft badge-xs">C</span>{% endif %}</td>

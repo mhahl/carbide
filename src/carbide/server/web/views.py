@@ -34,6 +34,35 @@ def _base_query(request):
                     if k != "page")
 
 
+def _sort_links(request, allowed: dict, default: str):
+    """Server-side sort state for paginated tables.
+
+    allowed maps column -> default-descending. Returns (sort, descending,
+    links) where links[col] = {"url", "ind", "aria"}; sort links reset
+    to page 1 and keep the other filters.
+    """
+    sort = request.query.get("sort") or default
+    if sort not in allowed:
+        sort = default
+    descending = (request.query.get("dir") or
+                  ("desc" if allowed[sort] else "asc")) != "asc"
+    base = "&".join(f"{k}={v}" for k, v in request.query.items()
+                    if k not in ("page", "sort", "dir"))
+    links = {}
+    for col, col_desc in allowed.items():
+        if col == sort:
+            ndir = "asc" if descending else "desc"
+            ind = "▼" if descending else "▲"
+            aria = "descending" if descending else "ascending"
+        else:
+            ndir = "desc" if col_desc else "asc"
+            ind, aria = "", "none"
+        query = f"{base}&" if base else ""
+        links[col] = {"url": f"{query}sort={col}&dir={ndir}", "ind": ind,
+                      "aria": aria}
+    return sort, descending, links
+
+
 def render(request, name, ctx=None, status=200):
     env = request.app["jinja"]
     template = env.get_template(name)
@@ -133,15 +162,22 @@ async def sessions_list(request):
     sensor = request.query.get("sensor") or ""
     ip = request.query.get("ip") or ""
     open_only = request.query.get("open") == "1"
+    show_empty = request.query.get("empty") == "1"
     page, offset, limit = _page_params(request)
+    sort, descending, links = _sort_links(request, {
+        "session_id": False, "sensor_id": False, "attacker_ip": False,
+        "username": False, "container_id": False, "started_at": True,
+        "ended_at": True}, "started_at")
     rows = await db.list_sessions(
         sensor_id=sensor or None, ip=ip or None, open_only=open_only,
-        limit=limit + 1, offset=offset)
+        require_container=not show_empty,
+        limit=limit + 1, offset=offset, sort=sort, descending=descending)
     return render(request, "sessions.html", {
         "rows": [_srow(t) for t in rows[:limit]],
         "sensor": sensor, "ip": ip, "open_only": open_only,
+        "show_empty": show_empty,
         "page": page, "has_more": len(rows) > limit,
-        "base_query": _base_query(request)})
+        "base_query": _base_query(request), "sort_links": links})
 
 
 @require_auth
@@ -195,13 +231,17 @@ async def session_detail(request):
 async def attackers_list(request):
     db = request.app["db"]
     page, offset, limit = _page_params(request)
-    rows = await db.list_attackers(limit=limit + 1, offset=offset)
+    sort, descending, links = _sort_links(request, {
+        "attacker_ip": False, "sessions": True, "last_seen": True,
+        "files": True, "malicious": True, "intel": False}, "last_seen")
+    rows = await db.list_attackers(limit=limit + 1, offset=offset,
+                                   sort=sort, descending=descending)
     return render(request, "attackers.html", {
         "rows": [dict(zip(("ip", "sessions", "last_seen", "files",
                            "malicious", "intel"), t))
                  for t in rows[:limit]],
         "page": page, "has_more": len(rows) > limit,
-        "base_query": _base_query(request)})
+        "base_query": _base_query(request), "sort_links": links})
 
 
 @require_auth
@@ -323,9 +363,13 @@ async def auth_view(request):
     accepted = request.query.get("accepted") or ""
     page, offset, limit = _page_params(request, 100)
     acc = {"1": True, "0": False}.get(accepted)
+    sort, descending, links = _sort_links(request, {
+        "at": True, "sensor_id": False, "username": False,
+        "password": False, "accepted": True}, "at")
     rows = await db.list_auth_attempts(
         sensor_id=sensor or None, username=username or None,
-        accepted=acc, limit=limit + 1, offset=offset)
+        accepted=acc, limit=limit + 1, offset=offset,
+        sort=sort, descending=descending)
     creds = await db.list_affinities()
     return render(request, "auth.html", {
         "rows": [dict(zip(
@@ -334,7 +378,7 @@ async def auth_view(request):
         "creds": creds, "username": username, "sensor": sensor,
         "accepted": accepted, "page": page,
         "has_more": len(rows) > limit,
-        "base_query": _base_query(request)})
+        "base_query": _base_query(request), "sort_links": links})
 
 
 # -- podman state ------------------------------------------------------------

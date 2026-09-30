@@ -53,7 +53,7 @@
 <div class="card-body p-4 gap-2">
 <h2 class="font-medium">Filesystem changes</h2>
 {% if rows %}
-<div class="overflow-x-auto max-h-160"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<div class="overflow-x-auto max-h-160"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
 <thead><tr><th scope="col">Path</th><th scope="col">A</th><th scope="col">B</th></tr></thead>
 <tbody>
 {% for r in rows %}

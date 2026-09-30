@@ -50,7 +50,7 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ diffs|length }}</span>
 </div>
 {% if diffs %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows">
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows">
 <thead><tr><th scope="col"><span class="sr-only">Change</span></th><th scope="col">Path</th></tr></thead>
 <tbody>
 {% for d in diffs %}
@@ -70,11 +70,11 @@
 {% if files_detected %}<span class="badge badge-error badge-soft badge-sm tabular-nums">{{ files_detected }}/{{ files|length }} detected</span>{% else %}<span class="badge badge-ghost badge-sm tabular-nums">{{ files_detected }}/{{ files|length }} detected</span>{% endif %}
 </div>
 {% if files %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Name</th><th scope="col" class="text-right">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Name</th><th scope="col" class="text-right" data-sort-type="number">Size</th><th scope="col">SHA256</th><th scope="col">Verdict</th><th scope="col" data-sort="off"><span class="sr-only">Download</span></th></tr></thead>
 <tbody>
 {% for f in files %}
-<tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td><td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
+<tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td><td class="text-right tabular-nums" data-sort-value="{{ f.size }}">{{ f.size|filesizeformat }}</td><td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
 <td>{% include "_verdict.html" %}</td>
 <td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
 {% endfor %}
@@ -93,7 +93,7 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ attempts|length }}</span>
 </div>
 {% if attempts %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
 <thead><tr><th scope="col">Time</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th></tr></thead>
 <tbody>
 {% for a in attempts %}
@@ -132,11 +132,11 @@
 <span class="badge badge-ghost badge-sm tabular-nums">{{ hits|length }}</span>
 </div>
 {% if hits %}
-<div class="overflow-x-auto max-h-96"><table class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right">Status</th><th scope="col" class="text-right">Bytes</th><th scope="col">MIME</th></tr></thead>
+<div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col" class="text-right" data-sort-type="number">Bytes</th><th scope="col">MIME</th></tr></thead>
 <tbody>
 {% for h in hits %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums" data-sort-value="{{ h.size }}">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}

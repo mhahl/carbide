@@ -170,6 +170,9 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
             len(await self.db.list_sessions(open_only=True)), 1)
         self.assertEqual(
             len(await self.db.list_sessions(ip="2.2.2.2")), 1)
+        await self.db.set_session_container("a", "c1", True)
+        self.assertEqual(
+            len(await self.db.list_sessions(require_container=True)), 1)
         self.assertEqual(len(await self.db.get_transcript("a")), 1)
         self.assertEqual(len(await self.db.list_session_files("a")), 1)
         self.assertEqual(
@@ -305,6 +308,48 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(frows[0][2:], ("up/x", "e" * 64, 3, frows[0][5],
                                         "malicious", 9, 0, ""))
         self.assertEqual(await self.db.list_files_by_ip("8.8.8.8"), [])
+
+    async def test_list_sorting(self):
+        t0 = now()
+        await self.db.ensure_session("sa", "s1", "1.1.1.1")
+        await self.db.set_session_started("sa", "zed", t0, "1.1.1.1")
+        await self.db.ensure_session("sb", "s1", "2.2.2.2")
+        await self.db.set_session_started(
+            "sb", "anna", t0 + datetime.timedelta(seconds=10), "2.2.2.2")
+        await self.db.set_session_end("sb", t0, "closed")
+        by_user = await self.db.list_sessions(sort="username",
+                                              descending=False)
+        self.assertEqual([r[0] for r in by_user], ["sb", "sa"])
+        by_user_desc = await self.db.list_sessions(sort="username",
+                                                   descending=True)
+        self.assertEqual([r[0] for r in by_user_desc], ["sa", "sb"])
+        # invalid sort falls back to started_at desc (injection-safe:
+        # only allowlist columns ever reach ORDER BY)
+        fallback = await self.db.list_sessions(
+            sort="1; DROP TABLE sessions", descending=True)
+        self.assertEqual([r[0] for r in fallback], ["sb", "sa"])
+        # open sessions (NULL ended_at) sort last in both directions
+        ended_asc = await self.db.list_sessions(sort="ended_at",
+                                                descending=False)
+        self.assertEqual([r[0] for r in ended_asc], ["sb", "sa"])
+        ended_desc = await self.db.list_sessions(sort="ended_at",
+                                                 descending=True)
+        self.assertEqual([r[0] for r in ended_desc], ["sb", "sa"])
+        # attempts + attackers
+        await self.db.add_auth_attempt("sa", "s1", "zed", "pw", True,
+                                       False, t0)
+        await self.db.add_auth_attempt("sb", "s1", "anna", "pw", False,
+                                       False, t0)
+        attempts = await self.db.list_auth_attempts(sort="username",
+                                                    descending=False)
+        self.assertEqual([r[3] for r in attempts], ["anna", "zed"])
+        attackers = await self.db.list_attackers(sort="attacker_ip",
+                                                 descending=False)
+        self.assertEqual([r[0] for r in attackers],
+                         ["1.1.1.1", "2.2.2.2"])
+        attackers_bad = await self.db.list_attackers(sort="nope")
+        self.assertEqual([r[0] for r in attackers_bad],
+                         ["2.2.2.2", "1.1.1.1"])
 
     async def test_server_settings_crud(self):
         self.assertIsNone(await self.db.get_setting("virustotal.api_key"))

@@ -24,8 +24,8 @@ Register sensor</a>
 <div class="divider">Seen but not managed</div>
 <section class="card card-border bg-base-100" aria-label="Unmanaged sensors">
 <div class="card-body p-4 gap-2">
-<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular-nums">
-<thead><tr><th scope="col">Sensor</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col"><span class="sr-only">Register</span></th></tr></thead>
+<div class="overflow-x-auto"><table data-sortable class="table table-sm table-zebra tabular-nums">
+<thead><tr><th scope="col">Sensor</th><th scope="col">First seen</th><th scope="col">Last seen</th><th scope="col" data-sort="off"><span class="sr-only">Register</span></th></tr></thead>
 <tbody>
 {% for s in unmanaged %}
 <tr class="hover:bg-base-200"><td class="font-mono">{{ s }}</td><td>{{ seen_full[s].first|ts }}</td><td>{{ seen_full[s].last|ts }}</td>

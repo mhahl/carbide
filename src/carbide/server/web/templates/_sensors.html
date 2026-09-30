@@ -1,6 +1,6 @@
 {% if managed %}
-<div class="overflow-x-auto"><table class="table table-sm table-zebra tabular-nums">
-<thead><tr><th scope="col">Sensor</th><th scope="col">Link</th><th scope="col">SSH target</th><th scope="col">Last seen</th><th scope="col"><span class="sr-only">Sessions</span></th></tr></thead>
+<div class="overflow-x-auto"><table data-sortable class="table table-sm table-zebra tabular-nums">
+<thead><tr><th scope="col">Sensor</th><th scope="col">Link</th><th scope="col">SSH target</th><th scope="col">Last seen</th><th scope="col" data-sort="off"><span class="sr-only">Sessions</span></th></tr></thead>
 <tbody>
 {% for m in managed %}
 <tr class="hover:bg-base-200"><td><a class="link font-mono" href="/sensors/{{ m.sensor_id }}">{{ m.sensor_id }}</a></td>

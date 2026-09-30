@@ -198,3 +198,29 @@ class SetupEnvIdempotenceTest(unittest.TestCase):
                 seed = "%s=one\n%s=two\n" % (key, key)
                 body, _ = _run_set_env(setup, seed, (key, "three"))
                 self.assertEqual(body, "%s=three\n" % key)
+
+
+class ServerFirewallTest(unittest.TestCase):
+    """Server firewall must fence the container-SSH range, not just API+console.
+
+    Regression: setup.sh opened only 8440/8080 to --allow-subnet, so
+    sensors linked fine (API up, manual ssh to :22 fine) but could not
+    reach affinity containers on [podman] port_range_* — firewalld
+    dropped SSH_HOST:220xx. The range rides the same per-subnet
+    rich-rule loop, read from the rendered config.
+    """
+
+    def test_container_ssh_range_in_rich_rule_loop(self):
+        with open(SERVER_SETUP) as fh:
+            body = fh.read()
+        # Range parsed out of the rendered config.toml [podman] section,
+        # with a fallback matching the config.py defaults.
+        self.assertIn("port_range_start", body)
+        self.assertIn("port_range_end", body)
+        self.assertIn("22000-22100", body)
+        # ... and fed into the same per-subnet loop as API/WEB ports.
+        loop = [ln for ln in body.splitlines()
+                if ln.strip().startswith("for port in")]
+        self.assertEqual(len(loop), 1)
+        for token in ("API_PORT", "WEB_PORT", "POOL_PORTS"):
+            self.assertIn(token, loop[0])

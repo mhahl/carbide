@@ -514,13 +514,37 @@ class Database:
              status, size, mime))
 
     # -- console reads -------------------------------------------------
+    @staticmethod
+    def _order_by(allow: dict, sort: str, descending: bool,
+                  default: str, default_desc: bool, tiebreak: str) -> str:
+        """ORDER BY from an allowlist map (the SQL-injection boundary:
+        only fixed column names ever reach the query)."""
+        if sort not in allow:
+            sort, descending = default, default_desc
+        col, nulls_last = allow[sort]
+        direction = "DESC" if descending else "ASC"
+        nulls = " NULLS LAST" if nulls_last else ""
+        return f"ORDER BY {col} {direction}{nulls}, {tiebreak}"
+
     async def list_sensors(self):
         return await self._exec(
             "SELECT sensor_id, first_seen, last_seen FROM sensors "
             "ORDER BY last_seen DESC NULLS LAST", fetch="all")
 
+    _SESSION_SORTS = {
+        "session_id": ("session_id", False),
+        "sensor_id": ("sensor_id", False),
+        "attacker_ip": ("attacker_ip", False),
+        "username": ("username", False),
+        "container_id": ("container_id", False),
+        "started_at": ("started_at", True),
+        "ended_at": ("ended_at", True),
+    }
+
     async def list_sessions(self, sensor_id=None, ip=None, open_only=False,
-                            limit=100, offset=0):
+                            require_container=False,
+                            limit=100, offset=0, sort="started_at",
+                            descending=True):
         conds, params = [], []
         if sensor_id:
             conds.append("sensor_id = %s")
@@ -530,13 +554,18 @@ class Database:
             params.append(ip)
         if open_only:
             conds.append("ended_at IS NULL")
+        if require_container:
+            # Unattached sessions carry '' (the column default), and old
+            # rows may carry NULL — exclude both.
+            conds.append("container_id IS NOT NULL AND container_id <> ''")
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         params.extend([limit, offset])
+        order = self._order_by(self._SESSION_SORTS, sort, descending,
+                               "started_at", True, "session_id")
         return await self._exec(
             "SELECT session_id, sensor_id, attacker_ip, username, "
             "container_id, fresh, over_quota, started_at, ended_at, "
-            f"end_reason FROM sessions {where} "
-            "ORDER BY started_at DESC NULLS LAST, session_id "
+            f"end_reason FROM sessions {where} {order} "
             "LIMIT %s OFFSET %s", tuple(params), fetch="all")
 
     async def get_transcript(self, session_id: str, after_id: int = 0,
@@ -553,9 +582,19 @@ class Database:
             "WHERE session_id = %s ORDER BY id", (session_id,),
             fetch="all")
 
+    _ATTEMPT_SORTS = {
+        "id": ("id", False),
+        "at": ("at", False),
+        "sensor_id": ("sensor_id", False),
+        "username": ("username", False),
+        "password": ("password", False),
+        "accepted": ("accepted", False),
+    }
+
     async def list_auth_attempts(self, session_id=None, sensor_id=None,
                                  username=None, accepted=None,
-                                 limit=200, offset=0):
+                                 limit=200, offset=0, sort="id",
+                                 descending=True):
         conds, params = [], []
         if session_id:
             conds.append("session_id = %s")
@@ -571,10 +610,12 @@ class Database:
             params.append(accepted)
         where = f"WHERE {' AND '.join(conds)}" if conds else ""
         params.extend([limit, offset])
+        order = self._order_by(self._ATTEMPT_SORTS, sort, descending,
+                               "id", True, "id DESC")
         return await self._exec(
             "SELECT id, session_id, sensor_id, username, password, "
             "accepted, matched_list, at "
-            f"FROM auth_attempts {where} ORDER BY id DESC "
+            f"FROM auth_attempts {where} {order} "
             "LIMIT %s OFFSET %s", tuple(params), fetch="all")
 
     async def list_squid_hits(self, session_id=None, sensor_id=None,
@@ -893,7 +934,19 @@ class Database:
             "DELETE FROM server_settings WHERE key = %s", (key,))
 
     # -- attacker overview (console) --------------------------------------
-    async def list_attackers(self, limit=200, offset=0):
+    _ATTACKER_SORTS = {
+        "attacker_ip": ("attacker_ip", False),
+        "sessions": ("sessions", False),
+        "last_seen": ("last_seen", True),
+        "files": ("files", False),
+        "malicious": ("malicious", False),
+        "intel": ("intel", False),
+    }
+
+    async def list_attackers(self, limit=200, offset=0, sort="last_seen",
+                             descending=True):
+        order = self._order_by(self._ATTACKER_SORTS, sort, descending,
+                               "last_seen", True, "attacker_ip")
         return await self._exec(
             "SELECT s.attacker_ip, COUNT(DISTINCT s.session_id) AS sessions, "
             "MAX(s.started_at) AS last_seen, "
@@ -905,8 +958,7 @@ class Database:
             "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
             "LEFT JOIN ip_intel i ON i.attacker_ip = s.attacker_ip "
             "WHERE s.attacker_ip <> '' "
-            "GROUP BY s.attacker_ip, i.status "
-            "ORDER BY last_seen DESC NULLS LAST LIMIT %s OFFSET %s",
+            f"GROUP BY s.attacker_ip, i.status {order} LIMIT %s OFFSET %s",
             (limit, offset), fetch="all")
 
     async def list_files_by_ip(self, ip: str, limit=500):
