@@ -306,6 +306,7 @@ class SensorApp:
             listener = await asyncssh.create_server(
                 _server_class(self), addr, port,
                 server_host_keys=[scfg["host_key_path"]],
+                server_version="OpenSSH_10.2",
                 session_factory=self.handle_session,
                 sftp_factory=self.handle_sftp_factory,
                 encoding=None)  # raw bytes end to end
