@@ -1,15 +1,34 @@
-FROM docker.io/library/alpine:3.21
+# Carbide honeypot image: RHEL 9 web stack (httpd + mariadb) with seeded
+# databases and backup dumps. Attackers land here over SSH as "honey".
+FROM registry.access.redhat.com/ubi9/ubi:latest
 
-RUN apk add --no-cache openssh-server openssh-client shadow curl \
- && mkdir -p /run/sshd /home/honey/.ssh \
- && adduser -D -s /bin/sh honey \
- && chown honey:honey /home/honey/.ssh \
- && chmod 700 /home/honey/.ssh \
- && echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config \
- && echo "PermitRootLogin no" >> /etc/ssh/sshd_config \
- && echo "Welcome to Ubuntu 22.04.5 LTS (GNU/Linux 5.15.0-91-generic x86_64)" > /etc/motd \
- && printf '# .profile\numask 022\n' > /home/honey/.profile \
- && chown honey:honey /home/honey/.profile
+# UBI AppStream ships httpd but no MySQL server, so the Oracle Community
+# repo provides it (release RPM pins are verified live at build time).
+RUN dnf install -y \
+      https://repo.mysql.com/mysql80-community-release-el9-5.noarch.rpm \
+    && rpm --import /etc/pki/rpm-gpg/RPM-GPG-KEY-mysql* \
+    && dnf install -y --allowerasing openssh-server openssh-clients \
+      httpd mysql-community-server mysql-community-client curl \
+      shadow-utils passwd tar gzip procps-ng iproute vim-minimal \
+    && dnf clean all \
+    && mkdir -p /run/sshd /run/httpd /home/honey/.ssh /var/backups/mysql \
+      /usr/share/carbide \
+    && useradd -m -s /bin/bash honey \
+    && chown honey:honey /home/honey/.ssh \
+    && chmod 700 /home/honey/.ssh \
+    && echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config \
+    && echo "PermitRootLogin no" >> /etc/ssh/sshd_config \
+    && echo "Welcome to Red Hat Enterprise Linux 9 (web-prod-02)" > /etc/motd
+
+COPY dumps/wordpress-2026-08-30.sql /var/backups/mysql/
+COPY dumps/shop-2026-09-01.sql /home/honey/shop_backup.sql
+COPY mysql-init.sql /usr/share/carbide/mysql-init.sql
+COPY dotfiles/.my.cnf dotfiles/.bash_history /home/honey/
+RUN chown honey:honey /home/honey/shop_backup.sql /home/honey/.my.cnf \
+      /home/honey/.bash_history \
+    && chmod 600 /home/honey/.my.cnf \
+    && chmod 644 /var/backups/mysql/wordpress-2026-08-30.sql \
+      /home/honey/shop_backup.sql /home/honey/.bash_history
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
