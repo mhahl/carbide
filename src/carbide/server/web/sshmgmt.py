@@ -132,7 +132,11 @@ class SensorManager:
 
     async def push_config(self, sensor: dict) -> dict:
         """Append managed overrides to the remote .env (append wins, same
-        as setup.sh itself) and re-run setup to re-render + restart."""
+        as setup.sh itself) and re-run setup to pull the image, re-render
+        + restart. setup.sh force-recreates, so a pull that changed the
+        image updates the container; an unchanged pull is a no-op."""
+        # NOTE: firewall intentionally skipped (already fenced at
+        # provision); pull intentionally NOT skipped (see docstring).
         try:
             passwords = json.loads(sensor["auth_passwords"] or "[]")
         except ValueError:
@@ -151,8 +155,8 @@ class SensorManager:
         async with await self._connect(sensor) as conn:
             chained = (f"cd {sensor['remote_dir']} && "
                        f"cat >> .env <<'{marker}'\n{fragment}\n{marker}\n"
-                       "./setup.sh --skip-pull --skip-firewall")
-            return await self._run(conn, chained, timeout=300)
+                       "./setup.sh --skip-firewall")
+            return await self._run(conn, chained, timeout=900)
 
     async def provision(self, sensor: dict) -> dict:
         """Ship compose files, write .env, run full remote setup."""

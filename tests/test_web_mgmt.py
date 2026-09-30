@@ -152,7 +152,10 @@ class MgmtTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("cat >> .env", cmd)
         self.assertIn("AUTH_PASSWORDS='\"password\", \"123456\"'", cmd)
         self.assertIn("ACCEPT_PROBABILITY=0.05", cmd)
-        self.assertIn("./setup.sh --skip-pull --skip-firewall", cmd)
+        # Push must pull (a changed image updates the container via
+        # setup.sh's force-recreate); only the firewall stays skipped.
+        self.assertIn("./setup.sh --skip-firewall", cmd)
+        self.assertNotIn("--skip-pull", cmd)
 
     async def test_provision(self):
         tmp = tempfile.TemporaryDirectory()

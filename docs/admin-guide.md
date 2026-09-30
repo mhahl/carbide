@@ -260,6 +260,12 @@ vi .env                       # server: set a fresh SENSOR_TOKEN
 vi .env                       # set TAG=<tag>
 ./setup.sh --skip-firewall    # pulls + recreates
 
+# upgrade a sensor's image (the sensor runs quay.io/sigaint/carbide)
+# on the sensor host: vi .env  (set TAG=<tag>), then:
+./setup.sh --skip-firewall    # pulls + force-recreates
+# or from the console (managed sensor): Push config — pulls the
+# remote .env's TAG and recreates, updating only when the pull changed
+
 # read one session cold (see analyst-guide for the full flow)
 podman compose exec db psql -U carbide carbide -c \
   "SELECT markdown FROM reports WHERE session_id = '...'"
