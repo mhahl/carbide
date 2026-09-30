@@ -1,7 +1,7 @@
-"""Affinity pool: per-sensor IP->container mapping with a pre-warmed fresh
-pool, keep-warm stops, and port allocation. All blocking Podman calls run in
-an executor; ``podman`` here is any object with the PodmanWrapper surface
-(real or fake).
+"""Affinity pool: per-sensor IP->container mapping with a hot fresh pool
+(started, sshd-ready), keep-warm stops, and port allocation. All blocking
+Podman calls run in an executor; ``podman`` here is any object with the
+PodmanWrapper surface (real or fake).
 """
 import asyncio
 import logging
@@ -140,6 +140,8 @@ class Pool:
         return env
 
     async def _create_fresh(self) -> dict:
+        """Create one hot spare: started with sshd answering, so popping
+        it at assignment costs no boot wait."""
         name = f"carbide-fresh-{secrets.token_hex(4)}"
         password = new_password()
         port = self._alloc_port()
@@ -151,19 +153,39 @@ class Pool:
         except Exception:
             self._free_port(port)
             raise
+        try:
+            await self._ensure_started(cid)
+            await self._wait_sshd(port)
+        except Exception:
+            log.warning("fresh container %s never became ready; dropping",
+                        cid[:12])
+            self._free_port(port)
+            try:
+                await self.run_sync(self._pod.remove, cid)
+            except Exception:
+                pass
+            raise
         log.info("created fresh container %s (port %d)", cid[:12], port)
         return {"container_id": cid, "port": port, "password": password}
 
     async def _refill(self):
-        async with self._lock:
-            while len(self._fresh) < self._pool_size:
-                try:
-                    self._fresh.append(await self._create_fresh())
-                except Exception as exc:
-                    log.error("fresh pool refill failed: %s", exc)
-                    break
-            log.debug("fresh pool depth %d/%d",
-                      len(self._fresh), self._pool_size)
+        # Create outside the lock: hot spares take seconds (start + sshd
+        # wait) and must not serialize assignments. Port allocation is
+        # await-free set ops, so it needs no lock; only the list
+        # append takes it.
+        while True:
+            async with self._lock:
+                if len(self._fresh) >= self._pool_size:
+                    return
+            try:
+                fresh = await self._create_fresh()
+            except Exception as exc:
+                log.error("fresh pool refill failed: %s", exc)
+                return
+            async with self._lock:
+                self._fresh.append(fresh)
+                log.debug("fresh pool depth %d/%d",
+                          len(self._fresh), self._pool_size)
 
     # -- assignment ------------------------------------------------------------
     async def container_for(self, sensor_id: str, ip: str) -> dict:

@@ -41,11 +41,11 @@ class ApiTest(unittest.IsolatedAsyncioTestCase):
         cfg = make_config()
         self.blobs = BlobStore(os.path.join(self.tmp.name, "blobs"), 10**9)
         self.pool = Pool(self.pod, self.db, cfg)
-        await self.pool.start()
 
         async def _ready(*args, **kwargs):
             return None
         self.pool._wait_sshd = _ready
+        await self.pool.start()
         forensics = Forensics(self.pool, self.pod, self.db, self.blobs,
                               cfg)
         self.api = ServerAPI(self.db, self.pool, forensics, self.blobs,

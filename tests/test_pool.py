@@ -28,15 +28,47 @@ class PoolTest(unittest.IsolatedAsyncioTestCase):
         self.db = FakeDatabase()
         self.pod = FakePodman()
         self.pool = Pool(self.pod, self.db, make_config())
-        await self.pool.start()
-        # FakePod listens on nothing; stub sshd readiness (tested live
-        # below against a real socket).
+        # FakePod listens on nothing; stub sshd readiness before start
+        # (refill now waits for sshd per spare; tested live below
+        # against a real socket).
         async def _ready(*args, **kwargs):
             return None
         self.pool._wait_sshd = _ready
+        await self.pool.start()
 
     def test_fresh_pool_prefilled(self):
         self.assertEqual(len(self.pod.containers), 3)  # ref + 2 fresh
+
+    def test_fresh_pool_is_hot(self):
+        for fresh in self.pool._fresh:
+            self.assertEqual(
+                self.pod.status(fresh["container_id"]), "running")
+
+    async def test_hot_assign_does_not_restart(self):
+        starts = []
+        orig_start = self.pod.start
+
+        def counting(cid):
+            starts.append(cid)
+            return orig_start(cid)
+
+        self.pod.start = counting
+        ep = await self.pool.container_for("s1", "1.2.3.4")
+        self.assertTrue(ep["fresh"])
+        self.assertEqual(starts, [])
+
+    async def test_create_fresh_cleans_up_on_wait_failure(self):
+        before_containers = set(self.pod.containers)
+        before_ports = set(self.pool._used_ports)
+
+        async def _never(*args, **kwargs):
+            raise PodmanError("sshd never came up")
+
+        self.pool._wait_sshd = _never
+        with self.assertRaises(PodmanError):
+            await self.pool._create_fresh()
+        self.assertEqual(set(self.pod.containers), before_containers)
+        self.assertEqual(set(self.pool._used_ports), before_ports)
 
     async def test_new_ip_gets_fresh_running_container(self):
         ep = await self.pool.container_for("s1", "1.2.3.4")

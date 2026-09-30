@@ -29,11 +29,11 @@ class ServerLoggingTest(unittest.IsolatedAsyncioTestCase):
         self.pod = FakePodman()
         cfg = make_config()
         self.pool = Pool(self.pod, self.db, cfg)
-        await self.pool.start()
 
         async def _ready(*args, **kwargs):
             return None
         self.pool._wait_sshd = _ready
+        await self.pool.start()
         self.api = ServerAPI(self.db, self.pool, None, None, cfg)
 
     async def test_fresh_assignment_logged(self):
