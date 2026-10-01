@@ -13,7 +13,7 @@
 <tbody>
 {% for a in rows %}
 <tr class="hover:bg-base-200"><td class="font-mono"><a class="link" href="/attackers/{{ a.ip }}">{{ a.ip }}</a></td>
-<td class="text-right tabular-nums">{{ a.sessions }}</td><td class="whitespace-nowrap">{{ a.last_seen|ts }}</td>
+<td class="text-right tabular-nums">{{ a.sessions }}</td><td class="whitespace-nowrap">{{ a.last_seen|ago }}</td>
 <td class="text-right tabular-nums">{{ a.files }}</td>
 <td class="text-right tabular-nums">{% if a.malicious %}<span class="badge badge-error badge-soft badge-xs">{{ a.malicious }}</span>{% else %}0{% endif %}</td>
 <td>{% if a.intel == "ok" %}<span class="badge badge-success badge-soft badge-xs">scanned</span>{% elif a.intel == "error" %}<span class="badge badge-ghost badge-xs">failed</span>{% else %}<span class="badge badge-ghost badge-xs">queued</span>{% endif %}</td></tr>

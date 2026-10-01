@@ -565,6 +565,20 @@ class FakeDatabase:
         rows = _ordered(rows, key, descending)
         return rows[offset:offset + limit]
 
+    async def session_evidence_counts(self, session_ids):
+        out = {}
+        for sid in dict.fromkeys(s for s in session_ids if s):
+            if sid not in self.sessions:
+                continue
+            files = [f for f in self.files if f[0] == sid]
+            mal = sum(1 for f in files
+                      if (self.vt_scans.get(f[2]) or {}).get(
+                          "malicious", 0) > 0)
+            urls = sum(1 for h in self.squid if h[0] == sid)
+            out[sid] = {"files": len(files), "malicious": mal,
+                        "urls": urls}
+        return out
+
     async def list_files_by_ip(self, ip, limit=500):
         sids = {s["session_id"] for s in self.sessions.values()
                 if s["attacker_ip"] == ip}

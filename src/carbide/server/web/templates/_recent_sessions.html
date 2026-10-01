@@ -1,5 +1,5 @@
 <div class="overflow-x-auto"><table data-sortable class="table table-xs table-zebra tabular-nums">
-<thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Geo</th><th scope="col">PTR</th><th scope="col">User</th><th scope="col">Started</th><th scope="col">State</th></tr></thead>
+<thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Geo</th><th scope="col">PTR</th><th scope="col">User</th><th scope="col" data-sort-type="number">Started</th><th scope="col" class="text-right" data-sort-type="number">Files</th><th scope="col" class="text-right" data-sort-type="number">URLs</th><th scope="col">State</th></tr></thead>
 <tbody>
 {% for s in recent %}
 <tr class="hover:bg-base-200"><td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
@@ -7,7 +7,9 @@
 <td class="whitespace-nowrap">{% if s.geo %}<span title="{{ s.geo_country }}{% if s.geo_org %} · {{ s.geo_org }}{% endif %}">{{ s.geo }}</span>{% if s.geo_org %}<span class="block text-xs text-base-content/60">{{ s.geo_org|truncate(28) }}</span>{% endif %}{% else %}<span class="text-base-content/40">—</span>{% endif %}</td>
 <td class="font-mono text-xs">{% if s.rdns %}{{ s.rdns|truncate(30) }}{% else %}<span class="text-base-content/40">—</span>{% endif %}</td>
 <td class="font-mono">{{ s.username }}</td>
-<td class="whitespace-nowrap">{{ s.started_at|ts }}</td>
+<td class="whitespace-nowrap" data-sort-value="{{ s.started_at|epoch }}">{{ s.started_at|ago }}</td>
+<td class="text-right tabular-nums whitespace-nowrap" data-sort-value="{{ s.file_count }}">{% if s.file_count %}<a class="link font-mono" href="/sessions/{{ s.session_id }}#files">{{ s.file_count }}</a>{% if s.malicious_count %} <span class="badge badge-error badge-soft badge-xs">{{ s.malicious_count }} mal</span>{% endif %}{% else %}<span class="text-base-content/40">—</span>{% endif %}</td>
+<td class="text-right tabular-nums whitespace-nowrap" data-sort-value="{{ s.url_count }}">{% if s.url_count %}<a class="link font-mono" href="/sessions/{{ s.session_id }}#squid">{{ s.url_count }}</a>{% else %}<span class="text-base-content/40">—</span>{% endif %}</td>
 <td>{% if s.ended_at %}<span class="badge badge-ghost badge-xs">ended</span>{% else %}<span class="badge badge-success badge-soft badge-xs">open</span>{% endif %}</td></tr>
 {% else %}
 <tr><td colspan="100%">

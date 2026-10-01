@@ -493,6 +493,25 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
                                             sort="name", descending=False)
         self.assertEqual([r[4] for r in page], ["b-evil", "z-other"])
 
+    async def test_session_evidence_counts(self):
+        await self.db.ensure_session("a", "s1", "1.1.1.1")
+        await self.db.ensure_session("b", "s1", "2.2.2.2")
+        await self.db.add_session_file("a", "x", "e" * 64, 3, now())
+        await self.db.add_session_file("a", "y", "n" * 64, 3, now())
+        await self.db.save_vt_scan("e" * 64, "malicious", malicious=4)
+        await self.db.add_squid_hit("a", "s1", "10.0.0.2", now(), "GET",
+                                    "http://x/1", 200, 5, "text/html")
+        await self.db.add_squid_hit("a", "s1", "10.0.0.2", now(), "GET",
+                                    "http://x/2", 200, 5, "text/html")
+        counts = await self.db.session_evidence_counts(["a", "b", ""])
+        self.assertEqual(counts["a"],
+                         {"files": 2, "malicious": 1, "urls": 2})
+        self.assertEqual(counts["b"],
+                         {"files": 0, "malicious": 0, "urls": 0})
+        self.assertEqual(await self.db.session_evidence_counts([]), {})
+        self.assertEqual(
+            await self.db.session_evidence_counts(["nope"]), {})
+
     async def test_server_settings_crud(self):
         self.assertIsNone(await self.db.get_setting("virustotal.api_key"))
         await self.db.set_setting("virustotal.api_key", "k1")

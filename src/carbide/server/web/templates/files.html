@@ -32,19 +32,17 @@
 <section class="card card-border bg-base-100" aria-label="Captured files">
 <div class="card-body p-4 gap-2">
 <div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col" aria-sort="{{ sort_links.name.aria }}"><a class="link" href="/files?{{ sort_links.name.url }}">Name {{ sort_links.name.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.session_id.aria }}"><a class="link" href="/files?{{ sort_links.session_id.url }}">Session {{ sort_links.session_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.sensor_id.aria }}"><a class="link" href="/files?{{ sort_links.sensor_id.url }}">Sensor {{ sort_links.sensor_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.attacker_ip.aria }}"><a class="link" href="/files?{{ sort_links.attacker_ip.url }}">Attacker {{ sort_links.attacker_ip.ind }}</a></th><th scope="col" class="text-right" aria-sort="{{ sort_links.size.aria }}"><a class="link" href="/files?{{ sort_links.size.url }}">Size {{ sort_links.size.ind }}</a></th><th scope="col">SHA256</th><th scope="col" aria-sort="{{ sort_links.verdict.aria }}"><a class="link" href="/files?{{ sort_links.verdict.url }}">Verdict {{ sort_links.verdict.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.at.aria }}"><a class="link" href="/files?{{ sort_links.at.url }}">Captured {{ sort_links.at.ind }}</a></th><th scope="col"><span class="sr-only">Scan</span></th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
+<thead><tr><th scope="col" aria-sort="{{ sort_links.name.aria }}"><a class="link" href="/files?{{ sort_links.name.url }}">Name {{ sort_links.name.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.session_id.aria }}"><a class="link" href="/files?{{ sort_links.session_id.url }}">Session {{ sort_links.session_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.sensor_id.aria }}"><a class="link" href="/files?{{ sort_links.sensor_id.url }}">Sensor {{ sort_links.sensor_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.attacker_ip.aria }}"><a class="link" href="/files?{{ sort_links.attacker_ip.url }}">Attacker {{ sort_links.attacker_ip.ind }}</a></th><th scope="col" class="text-right" aria-sort="{{ sort_links.size.aria }}"><a class="link" href="/files?{{ sort_links.size.url }}">Size {{ sort_links.size.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.verdict.aria }}"><a class="link" href="/files?{{ sort_links.verdict.url }}">Verdict {{ sort_links.verdict.ind }}</a></th><th scope="col"><span class="sr-only">Scan</span></th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
 <tbody>
 {% for f in files %}
 <tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td>
 <td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ f.session_id }}">{{ f.session_id[:12] }}</a></td>
-<td><a class="link" href="/sessions?sensor={{ f.sensor_id }}">{{ f.sensor_id }}</a></td>
-<td class="font-mono"><a class="link" href="/attackers/{{ f.attacker_ip }}">{{ f.attacker_ip }}</a></td>
-<td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td>
-<td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
-<td>{% include "_verdict.html" %}</td>
-<td class="whitespace-nowrap">{{ f.at|ts }}</td>
-<td>{% if f.sha and (not f.vt or f.vt == "error") %}<button class="btn btn-xs btn-ghost" hx-post="/actions/files/{{ f.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td>
-<td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
+<td class="whitespace-nowrap"><a class="link" href="/sessions?sensor={{ f.sensor_id }}">{{ f.sensor_id }}</a></td>
+<td class="font-mono whitespace-nowrap"><a class="link" href="/attackers/{{ f.attacker_ip }}">{{ f.attacker_ip }}</a></td>
+<td class="text-right tabular-nums whitespace-nowrap">{{ f.size|filesizeformat }}</td>
+<td class="whitespace-nowrap">{% include "_verdict.html" %}</td>
+<td class="whitespace-nowrap">{% if f.sha and (not f.vt or f.vt == "error") %}<button class="btn btn-xs btn-ghost" hx-post="/actions/files/{{ f.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td>
+<td class="whitespace-nowrap">{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
 {% else %}
 <tr><td colspan="100%">
 <div class="flex flex-col items-center gap-2 py-6 text-center">

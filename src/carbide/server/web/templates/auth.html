@@ -34,7 +34,7 @@
 <thead><tr><th scope="col" aria-sort="{{ sort_links.at.aria }}"><a class="link" href="/auth?{{ sort_links.at.url }}">Time {{ sort_links.at.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.sensor_id.aria }}"><a class="link" href="/auth?{{ sort_links.sensor_id.url }}">Sensor {{ sort_links.sensor_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.username.aria }}"><a class="link" href="/auth?{{ sort_links.username.url }}">Username {{ sort_links.username.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.password.aria }}"><a class="link" href="/auth?{{ sort_links.password.url }}">Password {{ sort_links.password.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.accepted.aria }}"><a class="link" href="/auth?{{ sort_links.accepted.url }}">Result {{ sort_links.accepted.ind }}</a></th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for a in rows %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ a.at|ts }}</td><td><a class="link" href="/sessions?sensor={{ a.sensor_id }}">{{ a.sensor_id }}</a></td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ a.at|ago }}</td><td><a class="link" href="/sessions?sensor={{ a.sensor_id }}">{{ a.sensor_id }}</a></td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
 <td>{% if a.accepted %}<span class="badge badge-success badge-soft badge-xs">accept{% if a.matched %} · list{% endif %}</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td>
 <td><a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:8] }}</a></td></tr>
 {% else %}

@@ -507,6 +507,30 @@ async def vt_key_clear(request):
 
 
 @require_auth
+async def carto_key_save(request):
+    from .geomap import CARTO_KEY_SETTING
+    form = await request.post()
+    key = (form.get("api_key") or "").strip()
+    user = request["user"]["username"]
+    # Deliberately looser than the VT rule: CARTO key formats vary,
+    # so anything non-blank without whitespace is accepted.
+    if not key or len(key) > 256 or any(ch.isspace() for ch in key):
+        raise web.HTTPFound("/settings?error=key+looks+invalid")
+    await request.app["db"].set_setting(CARTO_KEY_SETTING, key)
+    log.info("console %s: saved carto api key (…%s)", user, key[-4:])
+    raise web.HTTPFound("/settings?notice=carto+key+saved")
+
+
+@require_auth
+async def carto_key_clear(request):
+    from .geomap import CARTO_KEY_SETTING
+    user = request["user"]["username"]
+    await request.app["db"].delete_setting(CARTO_KEY_SETTING)
+    log.info("console %s: cleared carto api key", user)
+    raise web.HTTPFound("/settings?notice=carto+key+cleared")
+
+
+@require_auth
 async def vt_key_verify(request):
     from ..vt import (VTAuthError, VTError, VTQuotaExceeded, build_client,
                       resolve_vt_key)

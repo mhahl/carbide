@@ -1144,6 +1144,29 @@ class Database:
             "WHERE s.attacker_ip = %s ORDER BY f.id DESC LIMIT %s",
             (ip, limit), fetch="all")
 
+    async def session_evidence_counts(self, session_ids) -> dict:
+        """Per-session evidence counts for the recent-sessions panel.
+
+        Returns {session_id: {"files", "malicious", "urls"}}; sessions
+        without evidence still get a zero row.
+        """
+        sids = list(dict.fromkeys(s for s in session_ids if s))
+        if not sids:
+            return {}
+        rows = await self._exec(
+            "SELECT s.session_id, COUNT(DISTINCT f.id) AS files, "
+            "COUNT(DISTINCT CASE WHEN v.malicious > 0 THEN f.id END) "
+            "AS malicious, COUNT(DISTINCT h.id) AS urls "
+            "FROM sessions s "
+            "LEFT JOIN session_files f ON f.session_id = s.session_id "
+            "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
+            "LEFT JOIN squid_hits h ON h.session_id = s.session_id "
+            "WHERE s.session_id = ANY(%s) "
+            "GROUP BY s.session_id",
+            (sids,), fetch="all")
+        return {sid: {"files": files, "malicious": mal, "urls": urls}
+                for sid, files, mal, urls in rows}
+
     _FILE_SORTS = {
         "name": ("f.name", False),
         "session_id": ("f.session_id", False),

@@ -24,6 +24,45 @@ def _ts_filter(value):
     return value or "—"
 
 
+def _ago_text(value):
+    """Relative age ('3h ago') for a datetime, '' when not a datetime."""
+    if not isinstance(value, datetime.datetime):
+        return ""
+    at = value if value.tzinfo else value.replace(
+        tzinfo=datetime.timezone.utc)
+    secs = max(0, int((datetime.datetime.now(datetime.timezone.utc)
+                       - at).total_seconds()))
+    if secs < 60:
+        return "just now"
+    if secs < 3600:
+        return f"{secs // 60}m ago"
+    if secs < 48 * 3600:
+        return f"{secs // 3600}h ago"
+    return f"{secs // 86400}d ago"
+
+
+def _ago_filter(value):
+    """Relative-age cell with the absolute time on hover."""
+    from markupsafe import Markup
+    text = _ago_text(value)
+    if not text:
+        return "—"
+    return Markup(f'<span title="{_ts_filter(value)}">{text}</span>')
+
+
+def _epoch_filter(value):
+    """Epoch seconds for client-side sort keys; '' when not a datetime.
+
+    data-sortable tables show relative ages, which don't sort as text,
+    so timestamp cells carry data-sort-value="{{ x|epoch }}".
+    """
+    if not isinstance(value, datetime.datetime):
+        return ""
+    at = value if value.tzinfo else value.replace(
+        tzinfo=datetime.timezone.utc)
+    return str(int(at.timestamp()))
+
+
 def _short_filter(value):
     text = str(value or "")
     return text[:12] if len(text) > 12 else text
@@ -39,6 +78,8 @@ def make_jinja():
         loader=FileSystemLoader(os.path.join(HERE, "templates")),
         autoescape=select_autoescape(["html"]))
     env.filters["ts"] = _ts_filter
+    env.filters["ago"] = _ago_filter
+    env.filters["epoch"] = _epoch_filter
     env.filters["short"] = _short_filter
     env.filters["nl2br"] = _nl2br_filter
     return env
@@ -133,6 +174,9 @@ def create_app(deps: dict) -> web.Application:
     app.router.add_post("/settings/virustotal/key/delete",
                         actions.vt_key_clear)
     app.router.add_post("/settings/virustotal/verify", actions.vt_key_verify)
+    app.router.add_post("/settings/carto/key", actions.carto_key_save)
+    app.router.add_post("/settings/carto/key/delete",
+                        actions.carto_key_clear)
     app.router.add_post("/settings/honeypot/image", actions.honey_image_save)
     app.router.add_post("/settings/honeypot/image/delete",
                         actions.honey_image_clear)

@@ -22,7 +22,7 @@
 {% if intel %}<span class="badge badge-ghost badge-sm tabular-nums">{{ ports|length }} open</span>{% endif %}
 </div>
 {% if intel and intel.status == "ok" %}
-<p class="text-sm text-base-content/60">Scanned {{ intel.scanned_at|ts }}{% if intel.rdns %} · {{ intel.rdns }}{% endif %}.</p>
+<p class="text-sm text-base-content/60">Scanned {{ intel.scanned_at|ago }}{% if intel.rdns %} · {{ intel.rdns }}{% endif %}.</p>
 {% if ports %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
 <thead><tr><th scope="col" class="text-right" data-sort-type="number">Port</th><th scope="col">Proto</th><th scope="col">Service</th><th scope="col">Version</th></tr></thead>
@@ -74,13 +74,13 @@
 </div>
 {% if sessions %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Container</th><th scope="col">Started</th><th scope="col">Ended</th></tr></thead>
+<thead><tr><th scope="col">Session</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Container</th><th scope="col" data-sort-type="number">Started</th><th scope="col" data-sort-type="number">Ended</th></tr></thead>
 <tbody>
 {% for s in sessions %}
 <tr class="hover:bg-base-200"><td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
 <td>{{ s.sensor_id }}</td><td class="font-mono">{{ s.username }}</td>
 <td class="font-mono">{% if s.container_id %}<a class="link" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% else %}—{% endif %}</td>
-<td class="whitespace-nowrap">{{ s.started_at|ts }}</td><td class="whitespace-nowrap">{{ s.ended_at|ts }}</td></tr>
+<td class="whitespace-nowrap" data-sort-value="{{ s.started_at|epoch }}">{{ s.started_at|ago }}</td><td class="whitespace-nowrap" data-sort-value="{{ s.ended_at|epoch }}">{{ s.ended_at|ago }}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}

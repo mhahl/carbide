@@ -57,6 +57,7 @@
 <h2 class="font-medium">Attacker origins</h2>
 <span class="badge badge-ghost badge-sm tabular-nums">{{ geo_dots|length }} countries</span>
 {% if geo_unknown %}<span class="badge badge-ghost badge-sm tabular-nums">{{ geo_unknown }} ungeolocated</span>{% endif %}
+{% if not carto_set %}<span class="text-xs text-base-content/60">tiles watermarked — <a class="link" href="/settings">set a CARTO key</a></span>{% endif %}
 <a class="link text-sm ms-auto" href="/attackers">All attackers</a>
 </div>
 {% if geo_dots %}
@@ -74,13 +75,13 @@
     return;
   }
   var theme = document.documentElement.getAttribute("data-theme");
+  var tiles = {{ map_tiles|tojson }};
   var reduce = window.matchMedia &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   var map = L.map(el, { scrollWheelZoom: false, minZoom: 2,
                         zoomAnimation: !reduce, fadeAnimation: !reduce });
-  L.tileLayer("https://{s}.basemaps.cartocdn.com/" +
-      ((theme === "dark" || theme === "nord") ? "dark_all" : "light_all") +
-      "/{z}/{x}/{y}{r}.png", {
+  L.tileLayer((theme === "dark" || theme === "nord") ? tiles.dark :
+      tiles.light, {
     maxZoom: 19,
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
   }).addTo(map);
@@ -151,10 +152,10 @@
 <a class="link text-sm ms-auto" href="/auth">All attempts</a>
 </div>
 <div class="overflow-x-auto"><table data-sortable class="table table-xs table-zebra tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Result</th><th scope="col">Session</th></tr></thead>
+<thead><tr><th scope="col" data-sort-type="number">Time</th><th scope="col">Sensor</th><th scope="col">User</th><th scope="col">Result</th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for a in auth %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ a.at|ts }}</td><td>{{ a.sensor_id }}</td><td class="font-mono">{{ a.username }}</td>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap" data-sort-value="{{ a.at|epoch }}">{{ a.at|ago }}</td><td>{{ a.sensor_id }}</td><td class="font-mono">{{ a.username }}</td>
 <td>{% if a.accepted %}<span class="badge badge-success badge-soft badge-xs">accept</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td>
 <td><a class="link font-mono" href="/sessions/{{ a.session_id }}">{{ a.session_id[:8] }}</a></td></tr>
 {% else %}
@@ -174,10 +175,10 @@
 <div class="card-body p-4 gap-2">
 <h2 class="font-medium">Recent Squid hits</h2>
 <div class="overflow-x-auto"><table data-sortable class="table table-xs table-zebra tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col">Session</th></tr></thead>
+<thead><tr><th scope="col" data-sort-type="number">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for h in squid %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url[:80] }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td><a class="link font-mono" href="/sessions/{{ h.session_id }}">{{ h.session_id[:8] }}</a></td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap" data-sort-value="{{ h.at|epoch }}">{{ h.at|ago }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url[:80] }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td><a class="link font-mono" href="/sessions/{{ h.session_id }}">{{ h.session_id[:8] }}</a></td></tr>
 {% else %}
 <tr><td colspan="100%">
 <div class="flex flex-col items-center gap-2 py-6 text-center">

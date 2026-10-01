@@ -3,7 +3,8 @@ import unittest
 
 from carbide.server.web.geomap import (CENTROIDS, HEIGHT, WIDTH,
                                        dot_radius, dots, heat_color,
-                                       heat_opacity, project, unproject)
+                                       heat_opacity, project, tile_url,
+                                       unproject)
 
 
 class GeomapTest(unittest.TestCase):
@@ -55,6 +56,21 @@ class GeomapTest(unittest.TestCase):
         self.assertEqual(out[0]["r"], dot_radius(2))
         self.assertEqual(out[0]["color"], "#d97706")
         self.assertEqual(out[1]["color"], "#dc2626")
+
+    def test_tile_url(self):
+        self.assertEqual(
+            tile_url("light_all"),
+            "https://{s}.basemaps.cartocdn.com/light_all/"
+            "{z}/{x}/{y}{r}.png")
+        self.assertEqual(
+            tile_url("dark_all", "secret-key-1"),
+            "https://{s}.basemaps.cartocdn.com/dark_all/"
+            "{z}/{x}/{y}{r}.png?api_key=secret-key-1")
+        # blank stays bare; reserved chars are quoted
+        self.assertEqual(tile_url("light_all", "  "),
+                         tile_url("light_all"))
+        self.assertIn("api_key=a%2Fb%3Fc",
+                      tile_url("light_all", "a/b?c"))
 
     def test_centroid_sanity(self):
         self.assertGreater(len(CENTROIDS), 150)

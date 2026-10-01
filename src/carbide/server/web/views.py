@@ -122,11 +122,12 @@ async def logout(request):
 # -- dashboard ---------------------------------------------------------
 @require_auth
 async def dashboard(request):
-    from .geomap import dots
+    from .geomap import CARTO_KEY_SETTING, dots, tile_url
     db = request.app["db"]
     day_ago = (datetime.datetime.now(datetime.timezone.utc)
                - datetime.timedelta(hours=24))
     geo_dots, geo_unknown = dots(await db.attacker_geo())
+    carto_key = (await db.get_setting(CARTO_KEY_SETTING) or "").strip()
     try:
         pods = await request.app["pool"].run_sync(
             request.app["pod"].list_all_containers)
@@ -154,6 +155,9 @@ async def dashboard(request):
         "live": request.app["api"].live_sensors(),
         "geo_dots": geo_dots,
         "geo_unknown": geo_unknown,
+        "map_tiles": {"light": tile_url("light_all", carto_key),
+                      "dark": tile_url("dark_all", carto_key)},
+        "carto_set": bool(carto_key),
     }
     return render(request, "dashboard.html", ctx)
 
@@ -600,8 +604,11 @@ async def settings_view(request):
     from ..vt import VT_KEY_SETTING
     from ..pool import HONEY_IMAGE_SETTING, same_image_ref
     from ..forensics import VOLATILE_SETTING, parse_prefixes
+    from .geomap import CARTO_KEY_SETTING
     db = request.app["db"]
     cfg = request.app["cfg"]
+    carto_stored = await db.get_setting(CARTO_KEY_SETTING)
+    carto_key = carto_stored.strip() if carto_stored else ""
     stored = await db.get_setting(VT_KEY_SETTING)
     file_key = cfg.section("virustotal")["api_key"] or ""
     if stored and stored.strip():
@@ -641,6 +648,8 @@ async def settings_view(request):
         "vt_used": await db.vt_quota_used(today),
         "vt_cap": cfg.get("virustotal.daily_cap", 500),
         "vt_rpm": cfg.get("virustotal.requests_per_minute", 4),
+        "carto_masked": "••••" + carto_key[-4:] if carto_key else "",
+        "carto_set": bool(carto_key),
         "honey_source": honey_source, "honey_effective": honey_effective,
         "honey_console_set": honey_console_set,
         "honey_present": honey_present,
@@ -674,6 +683,8 @@ async def _recent_with_intel(db, limit=10):
     rows = [_srow(t) for t in await db.list_sessions(limit=limit)]
     ips = [r["attacker_ip"] for r in rows]
     intel = await db.get_ip_intel_many(ips)
+    evidence = await db.session_evidence_counts(
+        [r["session_id"] for r in rows])
     for row in rows:
         info = intel.get(row["attacker_ip"]) or {}
         code = info.get("country_code") or ""
@@ -686,6 +697,10 @@ async def _recent_with_intel(db, limit=10):
         row["geo_org"] = info.get("org") or ""
         row["geo_country"] = info.get("country") or ""
         row["rdns"] = info.get("rdns") or ""
+        ev = evidence.get(row["session_id"]) or {}
+        row["file_count"] = ev.get("files", 0)
+        row["malicious_count"] = ev.get("malicious", 0)
+        row["url_count"] = ev.get("urls", 0)
     return rows
 
 

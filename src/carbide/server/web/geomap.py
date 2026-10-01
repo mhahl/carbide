@@ -6,8 +6,25 @@ lat/lng, and dots() turns per-country attacker counts into sized,
 colored markers for the dashboard Leaflet map.
 """
 import math
+from urllib.parse import quote
 
 WIDTH, HEIGHT = 1000, 500
+
+CARTO_KEY_SETTING = "carto.api_key"
+_TILE_HOST = "https://{s}.basemaps.cartocdn.com"
+
+
+def tile_url(style: str, api_key: str = "") -> str:
+    """Leaflet tile URL for a CARTO basemap style.
+
+    Since late Aug 2026 CARTO watermarks keyless tiles ("API KEY
+    REQUIRED"), so a console key appends as ?api_key=; empty stays
+    bare and degrades to watermarked tiles rather than failing.
+    """
+    url = f"{_TILE_HOST}/{style}/{{z}}/{{x}}/{{y}}{{r}}.png"
+    if api_key and api_key.strip():
+        url += f"?api_key={quote(api_key.strip(), safe='')}"
+    return url
 
 # Generated from ne_110m_admin_0_countries; do not hand-edit.
 CENTROIDS = {

@@ -1,12 +1,12 @@
 {% if managed %}
 <div class="overflow-x-auto"><table data-sortable class="table table-sm table-zebra tabular-nums">
-<thead><tr><th scope="col">Sensor</th><th scope="col">Link</th><th scope="col">SSH target</th><th scope="col">Last seen</th><th scope="col" data-sort="off"><span class="sr-only">Sessions</span></th></tr></thead>
+<thead><tr><th scope="col">Sensor</th><th scope="col">Link</th><th scope="col">SSH target</th><th scope="col" data-sort-type="number">Last seen</th><th scope="col" data-sort="off"><span class="sr-only">Sessions</span></th></tr></thead>
 <tbody>
 {% for m in managed %}
 <tr class="hover:bg-base-200"><td><a class="link font-mono" href="/sensors/{{ m.sensor_id }}">{{ m.sensor_id }}</a></td>
 <td>{% if m.sensor_id in live %}<span class="badge badge-success badge-soft badge-xs"><span class="status status-success status-xs" aria-hidden="true"></span>linked</span>{% else %}<span class="badge badge-ghost badge-xs"><span class="status status-neutral status-xs" aria-hidden="true"></span>down</span>{% endif %}</td>
 <td class="font-mono text-xs">{{ m.ssh_user or "(default)" }}@{{ m.ssh_host }}:{{ m.ssh_port }}</td>
-<td>{{ seen.get(m.sensor_id)|ts }}</td>
+<td data-sort-value="{{ seen.get(m.sensor_id)|epoch }}">{{ seen.get(m.sensor_id)|ago }}</td>
 <td><a class="link" href="/sessions?sensor={{ m.sensor_id }}">sessions</a></td></tr>
 {% endfor %}
 </tbody></table></div>

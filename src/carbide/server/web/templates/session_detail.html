@@ -22,8 +22,8 @@
 <div><dt class="text-xs text-base-content/60">Attacker</dt><dd class="font-mono font-medium"><a class="link" href="/attackers/{{ s.attacker_ip }}">{{ s.attacker_ip }}</a></dd></div>
 <div><dt class="text-xs text-base-content/60">User</dt><dd class="font-mono font-medium">{{ s.username or "—" }}</dd></div>
 <div><dt class="text-xs text-base-content/60">Container</dt><dd class="font-medium">{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</dd></div>
-<div><dt class="text-xs text-base-content/60">Started</dt><dd class="font-medium tabular-nums">{{ s.started_at|ts }}</dd></div>
-<div><dt class="text-xs text-base-content/60">Ended</dt><dd class="font-medium tabular-nums">{{ s.ended_at|ts }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Started</dt><dd class="font-medium tabular-nums">{{ s.started_at|ago }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Ended</dt><dd class="font-medium tabular-nums">{{ s.ended_at|ago }}</dd></div>
 <div class="sm:col-span-2"><dt class="text-xs text-base-content/60">Reason</dt><dd class="font-medium">{{ s.end_reason or "—" }}</dd></div>
 </dl>
 {% if not s.ended_at %}
@@ -63,7 +63,7 @@
 </div>
 </section>
 
-<section class="card card-border bg-base-100 xl:col-span-2" aria-label="Captured files">
+<section id="files" class="card card-border bg-base-100 xl:col-span-2 scroll-mt-20" aria-label="Captured files">
 <div class="card-body p-4 gap-2">
 <div class="flex items-center gap-2">
 <h2 class="font-medium">Files</h2>
@@ -96,10 +96,10 @@
 </div>
 {% if attempts %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th></tr></thead>
+<thead><tr><th scope="col" data-sort-type="number">Time</th><th scope="col">Username</th><th scope="col">Password</th><th scope="col">Result</th></tr></thead>
 <tbody>
 {% for a in attempts %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ a.at|ts }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap" data-sort-value="{{ a.at|epoch }}">{{ a.at|ago }}</td><td class="font-mono">{{ a.username }}</td><td class="font-mono">{{ a.password }}</td>
 <td>{% if a.accepted %}<span class="badge badge-success badge-soft badge-xs">accept{% if a.matched %} · list{% endif %}</span>{% else %}<span class="badge badge-ghost badge-xs">reject</span>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
@@ -127,7 +127,7 @@
 </div>
 </section>
 
-<section class="card card-border bg-base-100" aria-label="Session Squid hits">
+<section id="squid" class="card card-border bg-base-100 scroll-mt-20" aria-label="Session Squid hits">
 <div class="card-body p-4 gap-2">
 <div class="flex items-center gap-2">
 <h2 class="font-medium">Squid hits</h2>
@@ -135,10 +135,10 @@
 </div>
 {% if hits %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col" class="text-right" data-sort-type="number">Bytes</th><th scope="col">MIME</th><th scope="col">VT</th><th scope="col" data-sort="off"><span class="sr-only">Scan</span></th></tr></thead>
+<thead><tr><th scope="col" data-sort-type="number">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col" class="text-right" data-sort-type="number">Bytes</th><th scope="col">MIME</th><th scope="col">VT</th><th scope="col" data-sort="off"><span class="sr-only">Scan</span></th></tr></thead>
 <tbody>
 {% for h in hits %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{% if h.vt_link %}<a class="link" href="{{ h.vt_link }}">{{ h.url }}</a>{% else %}{{ h.url }}{% endif %}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums" data-sort-value="{{ h.size }}">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td><td>{% set f = h %}{% include "_verdict.html" %}</td><td>{% if not h.vt or h.vt == "error" %}<button class="btn btn-xs btn-ghost" hx-post="/actions/squid/{{ h.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap" data-sort-value="{{ h.at|epoch }}">{{ h.at|ago }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{% if h.vt_link %}<a class="link" href="{{ h.vt_link }}">{{ h.url }}</a>{% else %}{{ h.url }}{% endif %}</td><td class="text-right tabular-nums">{{ h.status }}</td><td class="text-right tabular-nums" data-sort-value="{{ h.size }}">{{ h.size|filesizeformat }}</td><td>{{ h.mime }}</td><td>{% set f = h %}{% include "_verdict.html" %}</td><td>{% if not h.vt or h.vt == "error" %}<button class="btn btn-xs btn-ghost" hx-post="/actions/squid/{{ h.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% else %}

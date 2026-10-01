@@ -2,6 +2,7 @@
 against fakes (no postgres, no podman, no SSH).
 """
 import asyncio
+import datetime
 import os
 import tempfile
 import unittest
@@ -111,6 +112,21 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(body.index('aria-label="Recent sessions"'),
                         body.index('aria-label="Live sensors"'))
 
+    async def test_recent_sessions_show_evidence_counts(self):
+        ref = await self._seed_session()
+        await self.db.save_vt_scan(ref.sha256, "malicious", malicious=9)
+        await self.db.ensure_session("bare", "s1", "9.9.9.9")
+        await self.login()
+        body = await (await self.client.get("/")).text()
+        self.assertIn('data-sort-type="number">Files</th>', body)
+        self.assertIn('data-sort-type="number">URLs</th>', body)
+        self.assertIn('href="/sessions/sess1#files">1</a>', body)
+        self.assertIn("1 mal</span>", body)
+        self.assertIn('href="/sessions/sess1#squid">1</a>', body)
+        detail = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn('id="files"', detail)
+        self.assertIn('id="squid"', detail)
+
     async def test_dashboard_attacker_map(self):
         await self._seed_session()
         await self.db.save_ip_intel(
@@ -127,6 +143,8 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"lon": 5.4', body)
         self.assertIn("Netherlands (NL): 1 attacker, 1 session", body)
         self.assertNotIn("_world_paths", body)
+        self.assertIn("tiles watermarked", body)
+        self.assertNotIn("api_key=", body)
         self.assertLess(body.index('aria-label="Attacker origins"'),
                         body.index('aria-label="Recent sessions"'))
 
@@ -256,6 +274,21 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("withbox", body)
         self.assertIn("nobox", body)
 
+    async def test_ended_shows_relative_age(self):
+        await self._seed_session()
+        ended = utcnow() - datetime.timedelta(hours=3, minutes=5)
+        await self.db.set_session_end("sess1", ended, "closed")
+        await self.login()
+        body = await (await self.client.get("/sessions?empty=1")).text()
+        self.assertIn(
+            f'<span title="{ended.strftime("%Y-%m-%d %H:%M:%S")}">'
+            "3h ago</span>", body)
+        detail = await (await self.client.get("/sessions/sess1")).text()
+        self.assertIn(">3h ago</span>", detail)
+        attacker = await (
+            await self.client.get("/attackers/9.9.9.9")).text()
+        self.assertIn(">3h ago</span>", attacker)
+
     async def test_attackers_and_verdicts(self):
         ref = await self._seed_session()
         await self.db.save_vt_scan(
@@ -318,6 +351,8 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn('href="/sessions/sess1"', body)
         self.assertIn('href="/attackers/9.9.9.9"', body)
         self.assertIn("/files?sort=verdict&amp;dir=asc", body)
+        self.assertNotIn("SHA256", body)
+        self.assertNotIn(">Captured", body)
         # Scan only for shas without a verdict; dropped files say so.
         self.assertIn("/actions/files/3/scan", body)
         self.assertNotIn("/actions/files/0/scan", body)
@@ -394,6 +429,40 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.db.get_setting("virustotal.api_key"))
         body = await (await self.client.get("/settings")).text()
         self.assertIn("none", body)
+
+    async def test_carto_key_settings_flow(self):
+        await self.login()
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("Attacker map", body)
+        self.assertIn("watermarked", body)
+        resp = await self.client.post(
+            "/settings/carto/key", data={"api_key": "has space"},
+            allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("error=key+looks+invalid", resp.headers["Location"])
+        key = "carto-test-key-1234"
+        resp = await self.client.post(
+            "/settings/carto/key", data={"api_key": key},
+            allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("notice=carto+key+saved", resp.headers["Location"])
+        self.assertEqual(await self.db.get_setting("carto.api_key"), key)
+        body = await (await self.client.get("/settings")).text()
+        self.assertIn("••••1234", body)
+        self.assertNotIn(key, body)
+        self.assertIn("key set", body)
+        # dashboard tiles carry the key; the watermark note goes away
+        await self._seed_session()
+        await self.db.save_ip_intel(
+            "9.9.9.9", country_code="NL", country="Netherlands")
+        dash = await (await self.client.get("/")).text()
+        self.assertIn(f"?api_key={key}", dash)
+        self.assertNotIn("tiles watermarked", dash)
+        resp = await self.client.post(
+            "/settings/carto/key/delete", allow_redirects=False)
+        self.assertEqual(resp.status, 302)
+        self.assertIn("notice=carto+key+cleared", resp.headers["Location"])
+        self.assertIsNone(await self.db.get_setting("carto.api_key"))
 
     async def test_vt_key_verify_rejected(self):
         await self.db.set_setting("virustotal.api_key", "k" * 64)
@@ -697,3 +766,50 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
                 resp.content.readline(), timeout=5)
         self.assertIn(b"event: log", body)
         resp.close()
+
+
+class AgoFilterTest(unittest.TestCase):
+    def test_relative_buckets(self):
+        from carbide.server.web.webapp import _ago_text
+        now = utcnow()
+        self.assertEqual(_ago_text(now), "just now")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(seconds=30)), "just now")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(seconds=90)), "1m ago")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(minutes=59)), "59m ago")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(minutes=61)), "1h ago")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(hours=47)), "47h ago")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(hours=48)), "2d ago")
+        self.assertEqual(
+            _ago_text(now - datetime.timedelta(days=30)), "30d ago")
+        # non-datetimes, naive datetimes, and the future don't crash
+        self.assertEqual(_ago_text(None), "")
+        self.assertEqual(_ago_text("2026-10-01"), "")
+        self.assertRegex(_ago_text(datetime.datetime(2026, 1, 1)),
+                         r"^\d+d ago$")
+        self.assertEqual(
+            _ago_text(now + datetime.timedelta(minutes=5)), "just now")
+
+    def test_epoch_sort_keys(self):
+        from carbide.server.web.webapp import _epoch_filter
+        at = datetime.datetime(2026, 10, 1, 1, 10, 47,
+                               tzinfo=datetime.timezone.utc)
+        self.assertEqual(_epoch_filter(at), str(int(at.timestamp())))
+        naive = datetime.datetime(2026, 10, 1, 1, 10, 47)
+        self.assertEqual(_epoch_filter(naive), str(int(at.timestamp())))
+        self.assertEqual(_epoch_filter(None), "")
+        self.assertEqual(_epoch_filter("2026-10-01"), "")
+
+    def test_filter_wraps_absolute_in_title(self):
+        from carbide.server.web.webapp import _ago_filter
+        self.assertEqual(_ago_filter(None), "—")
+        ended = utcnow() - datetime.timedelta(hours=3, minutes=5)
+        self.assertEqual(
+            str(_ago_filter(ended)),
+            f'<span title="{ended.strftime("%Y-%m-%d %H:%M:%S")}">'
+            "3h ago</span>")

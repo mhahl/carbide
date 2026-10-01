@@ -34,6 +34,26 @@
 <p class="text-xs text-base-content/60">A console key overrides the config-file key and takes effect on the next queue pass (no restart). Clearing it falls back to the file. Verify spends one daily request. The key itself is never displayed.</p>
 </div>
 </section>
+<section class="card card-border bg-base-100" aria-label="Attacker map">
+<div class="card-body p-4 gap-3">
+<div class="flex flex-wrap items-center gap-2">
+<h2 class="font-medium">Attacker map</h2>
+{% if carto_set %}<span class="badge badge-success badge-soft">key set</span>{% else %}<span class="badge badge-warning badge-soft">watermarked</span>{% endif %}
+</div>
+<dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 text-sm">
+<div><dt class="text-xs text-base-content/60">Key</dt><dd class="font-mono font-medium">{{ carto_masked or "—" }}</dd></div>
+</dl>
+<form method="post" action="/settings/carto/key" data-busy class="flex flex-wrap items-end gap-2">
+<fieldset class="fieldset">
+<label class="label" for="f-cartokey">CARTO API key</label>
+<input id="f-cartokey" type="password" name="api_key" placeholder="key from carto.com/basemaps/apikey" autocomplete="off" class="input input-sm w-72">
+</fieldset>
+<button class="btn btn-sm" type="submit">Save key</button>
+</form>
+{% if carto_set %}<div><form method="post" action="/settings/carto/key/delete" data-busy class="inline"><button class="btn btn-sm btn-ghost" type="submit">Clear key</button></form></div>{% endif %}
+<p class="text-xs text-base-content/60">CARTO watermarks dashboard map tiles without a key. Takes effect on the next dashboard load. The key is sent to browsers (tiles load client-side), so use a basemaps-only key; it is never displayed here.</p>
+</div>
+</section>
 <section class="card card-border bg-base-100" aria-label="Honeypot image">
 <div class="card-body p-4 gap-3">
 <div class="flex flex-wrap items-center gap-2">

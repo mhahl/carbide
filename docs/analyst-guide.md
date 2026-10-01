@@ -19,7 +19,9 @@ live containers (status, full `inspect`, live diff, per-file reads and
 downloads); **Logs** tails the server log live; **Sensors** shows link
 state; **Settings** manages the VirusTotal key and quota. The
 **Dashboard** plots attacker origins as heat dots on a world map
-(hover a dot for counts; zoom and pan to explore). Anything the
+(hover a dot for counts; zoom and pan to explore) — paste a free
+CARTO key (carto.com/basemaps/apikey) into **Settings** or the tiles
+render watermarked. Anything the
 console can't express, drop to SQL (next section).
 
 ## Connecting
