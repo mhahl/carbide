@@ -30,6 +30,14 @@ tailwind.min.js (Tailwind v4 browser compiler, runs fully client-side)
   url: https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.3/dist/index.global.js
   sha256: a60c785630a06196808cbe79e6f7bdb4abcc8f4421a47b56f29338fc84805e3b
 
+leaflet.js (Leaflet 1.9.4 interactive maps, dashboard only)
+  url: https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js
+  sha256: db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a
+
+leaflet.css (Leaflet 1.9.4 styles, dashboard only)
+  url: https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css
+  sha256: a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6
+
 fonts/dm-sans-latin.woff2 (DM Sans 400-600 latin, OFL)
   url: https://fonts.gstatic.com/s/dmsans/v17/rP2Hp2ywxg089UriCZOIHQ.woff2
   sha256: ca72d2bcea8f4daa783dbdfa2d9b46068c3ce38168e05918fb867aa453b4f890

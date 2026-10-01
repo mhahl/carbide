@@ -278,6 +278,39 @@ async def attacker_detail(request):
         "files": files})
 
 
+_FILE_VERDICTS = ("malicious", "suspicious", "clean", "pending",
+                  "skipped", "error", "unscanned")
+
+
+@require_auth
+async def files_list(request):
+    db = request.app["db"]
+    sensor = request.query.get("sensor") or ""
+    ip = request.query.get("ip") or ""
+    verdict = request.query.get("verdict") or ""
+    if verdict not in _FILE_VERDICTS:
+        verdict = ""
+    page, offset, limit = _page_params(request)
+    sort, descending, links = _sort_links(request, {
+        "name": False, "session_id": False, "sensor_id": False,
+        "attacker_ip": False, "size": True, "at": True,
+        "verdict": False}, "at")
+    rows = await db.list_all_files(
+        sensor_id=sensor or None, ip=ip or None,
+        verdict=verdict or None,
+        limit=limit + 1, offset=offset, sort=sort, descending=descending)
+    return render(request, "files.html", {
+        "files": [dict(zip(
+            ("id", "session_id", "sensor_id", "attacker_ip", "name",
+             "sha", "size", "at", "vt", "vt_malicious",
+             "vt_suspicious", "vt_link"), t))
+            for t in rows[:limit]],
+        "sensor": sensor, "ip": ip, "verdict": verdict,
+        "verdicts": _FILE_VERDICTS,
+        "page": page, "has_more": len(rows) > limit,
+        "base_query": _base_query(request), "sort_links": links})
+
+
 @require_auth
 async def transcript_fragment(request):
     """Live tail fragment, polled by the session page while open."""

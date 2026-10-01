@@ -1,9 +1,9 @@
-"""Attacker-origin world map: equirectangular dots over vendored landmass.
+"""Attacker-origin world map: per-country heat dots for Leaflet.
 
-Coordinates live in a 1000x500 space shared with
-templates/_world_paths.html (Natural Earth 110m, equirectangular).
-CENTROIDS below is generated (largest-ring bbox centers per ISO_A2);
-dots() turns per-country attacker counts into sized SVG circles.
+CENTROIDS below is generated (largest-ring bbox centers per ISO_A2 in
+a 1000x500 equirectangular space); unproject() converts them back to
+lat/lng, and dots() turns per-country attacker counts into sized,
+colored markers for the dashboard Leaflet map.
 """
 import math
 
@@ -193,25 +193,33 @@ def project(lon: float, lat: float) -> tuple:
             int(round((90.0 - lat) / 180.0 * HEIGHT)))
 
 
+def unproject(x: int, y: int) -> tuple:
+    """Integer map space back to (lat, lon); inverse of project()."""
+    return (round(90.0 - y / HEIGHT * 180.0, 4),
+            round(x / WIDTH * 360.0 - 180.0, 4))
+
+
 def dot_radius(attackers: int) -> int:
     """Circle radius grows with the square root of attacker count."""
     return min(16, 4 + int(round(3 * math.sqrt(max(attackers, 1)))))
 
 
-def heat_class(attackers: int) -> str:
-    """Fill class by heat: warning for trickles, error for floods."""
-    if attackers >= 10:
-        return "fill-error"
-    if attackers >= 3:
-        return "fill-warning"
-    return "fill-warning opacity-60"
+def heat_color(attackers: int) -> str:
+    """Marker color by heat: amber for trickles, red for floods."""
+    return "#dc2626" if attackers >= 10 else "#d97706"
+
+
+def heat_opacity(attackers: int) -> float:
+    """Marker fill opacity: faint singletons, solid crowds."""
+    return 0.65 if attackers >= 3 else 0.4
 
 
 def dots(rows) -> tuple:
     """Map-ready dots + unplottable count from attacker_geo() rows.
 
     Rows are (country_code, country, attackers, sessions); unknown or
-    unmapped codes collapse into the second return value.
+    unmapped codes collapse into the second return value. Dots come
+    out ascending by heat so the hottest render on top.
     """
     out, unknown = [], 0
     for code, country, attackers, sessions in rows:
@@ -219,12 +227,13 @@ def dots(rows) -> tuple:
         if center is None:
             unknown += attackers
             continue
-        x, y = center
+        lat, lon = unproject(*center)
         label = f"{country or code} ({code}): {attackers} attacker" \
             f"{'s' if attackers != 1 else ''}, {sessions} session" \
             f"{'s' if sessions != 1 else ''}"
-        out.append({"x": x, "y": y, "r": dot_radius(attackers),
-                    "class": heat_class(attackers), "label": label,
+        out.append({"lat": lat, "lon": lon, "r": dot_radius(attackers),
+                    "color": heat_color(attackers),
+                    "opacity": heat_opacity(attackers), "label": label,
                     "attackers": attackers})
     out.sort(key=lambda d: d["attackers"])
     return out, unknown

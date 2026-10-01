@@ -9,13 +9,17 @@ flows below without SQL: **Sessions** reads a session cold end to end
 (report, diff, files with one-click download and VirusTotal verdicts,
 auth attempts with passwords, live-tailing transcript, Squid hits);
 **Attackers** profiles each source IP (nmap open ports/services, all
-its sessions and files with verdicts); **Compare** diffs two
+its sessions and files with verdicts); **Files** lists every
+captured file across all sessions with verdicts, filterable by sensor,
+IP, and verdict; **Compare** diffs two
 sessions' container changes side by side with their snapshots;
 **Snapshots** lists committed images; **Auth & creds** shows every
 password guess plus the honeypot SSH credentials; **Podman** inspects
 live containers (status, full `inspect`, live diff, per-file reads and
 downloads); **Logs** tails the server log live; **Sensors** shows link
-state; **Settings** manages the VirusTotal key and quota. Anything the
+state; **Settings** manages the VirusTotal key and quota. The
+**Dashboard** plots attacker origins as heat dots on a world map
+(hover a dot for counts; zoom and pan to explore). Anything the
 console can't express, drop to SQL (next section).
 
 ## Connecting

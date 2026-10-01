@@ -579,6 +579,45 @@ class FakeDatabase:
         rows.reverse()
         return rows[:limit]
 
+    _FILE_SORT_KEYS = {
+        "name": lambda r: r[4],
+        "session_id": lambda r: r[1],
+        "sensor_id": lambda r: r[2],
+        "attacker_ip": lambda r: r[3],
+        "size": lambda r: r[6],
+        "at": lambda r: r[7],
+        "verdict": lambda r: r[8],
+    }
+
+    async def list_all_files(self, sensor_id=None, ip=None, verdict=None,
+                             limit=100, offset=0, sort="at",
+                             descending=True):
+        rows = []
+        for idx, f in enumerate(self.files):
+            s = self.sessions.get(f[0])
+            if s is None:
+                continue
+            if sensor_id and s["sensor_id"] != sensor_id:
+                continue
+            if ip and s["attacker_ip"] != ip:
+                continue
+            vt = self.vt_scans.get(f[2]) or {}
+            status = vt.get("status")
+            if verdict == "unscanned":
+                if status is not None:
+                    continue
+            elif verdict in ("malicious", "suspicious", "clean",
+                             "pending", "skipped", "error"):
+                if status != verdict:
+                    continue
+            rows.append((idx, f[0], s["sensor_id"], s["attacker_ip"],
+                         f[1], f[2], f[3], f[4], status,
+                         vt.get("malicious"), vt.get("suspicious"),
+                         vt.get("permalink")))
+        key = self._FILE_SORT_KEYS.get(sort, self._FILE_SORT_KEYS["at"])
+        rows = _ordered(rows, key, descending)
+        return rows[offset:offset + limit]
+
 
 class FakeTransport:
     """Scripted VirusTotal HTTP transport (same shape as AiohttpTransport)."""

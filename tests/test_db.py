@@ -453,6 +453,46 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([r[0] for r in attackers_bad],
                          ["2.2.2.2", "1.1.1.1"])
 
+    async def test_list_all_files_filters_and_sorts(self):
+        t0 = now()
+        await self.db.ensure_session("a", "s1", "1.1.1.1")
+        await self.db.ensure_session("b", "s2", "2.2.2.2")
+        await self.db.add_session_file("a", "b-evil", "e" * 64, 30, t0)
+        await self.db.add_session_file(
+            "a", "a-note", "n" * 64, 10,
+            t0 + datetime.timedelta(seconds=10))
+        await self.db.add_session_file(
+            "b", "z-other", "z" * 64, 20,
+            t0 + datetime.timedelta(seconds=20))
+        await self.db.save_vt_scan("e" * 64, "malicious", malicious=5)
+        rows = await self.db.list_all_files()
+        self.assertEqual([r[4] for r in rows],
+                         ["z-other", "a-note", "b-evil"])
+        self.assertEqual(rows[0][1:4], ("b", "s2", "2.2.2.2"))
+        by_name = await self.db.list_all_files(sort="name",
+                                               descending=False)
+        self.assertEqual([r[4] for r in by_name],
+                         ["a-note", "b-evil", "z-other"])
+        by_size = await self.db.list_all_files(sort="size",
+                                               descending=True)
+        self.assertEqual([r[4] for r in by_size],
+                         ["b-evil", "z-other", "a-note"])
+        mal = await self.db.list_all_files(verdict="malicious")
+        self.assertEqual([r[4] for r in mal], ["b-evil"])
+        self.assertEqual(mal[0][8:10], ("malicious", 5))
+        unsc = await self.db.list_all_files(verdict="unscanned")
+        self.assertEqual({r[4] for r in unsc}, {"a-note", "z-other"})
+        s1 = await self.db.list_all_files(sensor_id="s1")
+        self.assertEqual({r[4] for r in s1}, {"a-note", "b-evil"})
+        ip = await self.db.list_all_files(ip="2.2.2.2")
+        self.assertEqual([r[4] for r in ip], ["z-other"])
+        # unknown verdicts are ignored, not fatal
+        bogus = await self.db.list_all_files(verdict="bogus")
+        self.assertEqual(len(bogus), 3)
+        page = await self.db.list_all_files(limit=2, offset=1,
+                                            sort="name", descending=False)
+        self.assertEqual([r[4] for r in page], ["b-evil", "z-other"])
+
     async def test_server_settings_crud(self):
         self.assertIsNone(await self.db.get_setting("virustotal.api_key"))
         await self.db.set_setting("virustotal.api_key", "k1")

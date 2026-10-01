@@ -2,8 +2,8 @@
 import unittest
 
 from carbide.server.web.geomap import (CENTROIDS, HEIGHT, WIDTH,
-                                       dot_radius, dots, heat_class,
-                                       project)
+                                       dot_radius, dots, heat_color,
+                                       heat_opacity, project, unproject)
 
 
 class GeomapTest(unittest.TestCase):
@@ -12,16 +12,33 @@ class GeomapTest(unittest.TestCase):
         self.assertEqual(project(180, -90), (WIDTH, HEIGHT))
         self.assertEqual(project(0, 0), (WIDTH // 2, HEIGHT // 2))
 
+    def test_unproject_inverts_projection(self):
+        self.assertEqual(unproject(0, 0), (90.0, -180.0))
+        self.assertEqual(unproject(WIDTH, HEIGHT), (-90.0, 180.0))
+        self.assertEqual(unproject(WIDTH // 2, HEIGHT // 2), (0.0, 0.0))
+        lat, lon = unproject(*CENTROIDS["NL"])
+        self.assertAlmostEqual(lat, 52.2)
+        self.assertAlmostEqual(lon, 5.4)
+        for code in ("NL", "US", "AU", "BR", "JP", "ZA"):
+            x, y = CENTROIDS[code]
+            lat, lon = unproject(x, y)
+            px, py = project(lon, lat)
+            self.assertLessEqual(abs(px - x), 1, code)
+            self.assertLessEqual(abs(py - y), 1, code)
+
     def test_dot_radius_scales_and_caps(self):
         self.assertEqual(dot_radius(1), 7)
         self.assertLess(dot_radius(1), dot_radius(4))
         self.assertLess(dot_radius(4), dot_radius(25))
         self.assertEqual(dot_radius(10**6), 16)
 
-    def test_heat_classes(self):
-        self.assertEqual(heat_class(1), "fill-warning opacity-60")
-        self.assertEqual(heat_class(3), "fill-warning")
-        self.assertEqual(heat_class(10), "fill-error")
+    def test_heat_colors_and_opacity(self):
+        self.assertEqual(heat_color(1), "#d97706")
+        self.assertEqual(heat_color(3), "#d97706")
+        self.assertEqual(heat_color(10), "#dc2626")
+        self.assertEqual(heat_opacity(1), 0.4)
+        self.assertEqual(heat_opacity(3), 0.65)
+        self.assertEqual(heat_opacity(10), 0.65)
 
     def test_dots_map_and_sort(self):
         out, unknown = dots([
@@ -30,11 +47,14 @@ class GeomapTest(unittest.TestCase):
             ("US", "United States", 12, 30),
         ])
         self.assertEqual(unknown, 4)
-        self.assertEqual([(d["x"], d["y"]) for d in out],
-                         [CENTROIDS["NL"], CENTROIDS["US"]])
+        self.assertEqual([(d["lat"], d["lon"]) for d in out],
+                         [unproject(*CENTROIDS["NL"]),
+                          unproject(*CENTROIDS["US"])])
         self.assertIn("Netherlands (NL): 2 attackers, 5 sessions",
                       out[0]["label"])
-        self.assertEqual(out[1]["class"], "fill-error")
+        self.assertEqual(out[0]["r"], dot_radius(2))
+        self.assertEqual(out[0]["color"], "#d97706")
+        self.assertEqual(out[1]["color"], "#dc2626")
 
     def test_centroid_sanity(self):
         self.assertGreater(len(CENTROIDS), 150)

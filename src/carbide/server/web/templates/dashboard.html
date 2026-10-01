@@ -1,5 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Dashboard — Carbide{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="/static/leaflet.css">
+<script src="/static/leaflet.js"></script>
+{% endblock %}
 {% block content %}
 <div class="flex flex-col gap-6">
 <div class="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
@@ -56,12 +60,45 @@
 <a class="link text-sm ms-auto" href="/attackers">All attackers</a>
 </div>
 {% if geo_dots %}
-<svg viewBox="0 0 1000 500" class="w-full h-auto rounded-lg bg-base-200" role="img" aria-label="World map of attacker countries">
-{% include "_world_paths.html" %}
-{% for d in geo_dots %}
-<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ d.r }}" class="{{ d.class }}" stroke-width="1.5" style="stroke: var(--color-base-100)"><title>{{ d.label }}</title></circle>
-{% endfor %}
-</svg>
+<div id="attacker-map" class="w-full h-80 rounded-lg z-0" aria-label="World map of attacker countries"></div>
+<noscript><p class="text-sm text-base-content/60">The attacker map needs JavaScript; see <a class="link" href="/attackers">all attackers</a>.</p></noscript>
+<script>
+(function () {
+  var el = document.getElementById("attacker-map");
+  var dots = {{ geo_dots|tojson }};
+  if (!el) {
+    return;
+  }
+  if (!window.L) {
+    el.innerHTML = '<p class="text-sm text-base-content/60 p-4">Map library failed to load; see <a class="link" href="/attackers">all attackers</a>.</p>';
+    return;
+  }
+  var theme = document.documentElement.getAttribute("data-theme");
+  var reduce = window.matchMedia &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var map = L.map(el, { scrollWheelZoom: false, minZoom: 2,
+                        zoomAnimation: !reduce, fadeAnimation: !reduce });
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/" +
+      ((theme === "dark" || theme === "nord") ? "dark_all" : "light_all") +
+      "/{z}/{x}/{y}{r}.png", {
+    maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>'
+  }).addTo(map);
+  var bounds = [];
+  dots.forEach(function (d) {
+    L.circleMarker([d.lat, d.lon], {
+      radius: d.r, color: d.color, weight: 1.5,
+      fillColor: d.color, fillOpacity: d.opacity
+    }).bindTooltip(d.label).addTo(map);
+    bounds.push([d.lat, d.lon]);
+  });
+  if (bounds.length === 1) {
+    map.setView(bounds[0], 4);
+  } else {
+    map.fitBounds(bounds, { padding: [24, 24] });
+  }
+})();
+</script>
 {% else %}
 <p class="text-sm text-base-content/60">No geolocated attackers yet — the intel worker fills this in as it scans.</p>
 {% endif %}
@@ -196,6 +233,15 @@
 <div class="list-col-grow">
 <p><a class="link" href="/auth">Auth &amp; creds</a></p>
 <p class="text-xs text-base-content/60">Login attempts and container passwords.</p>
+</div>
+</li>
+<li class="list-row items-center gap-2 px-0 py-2">
+<span class="size-8 rounded-full bg-base-200 flex items-center justify-center shrink-0" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 2v6h6"/></svg>
+</span>
+<div class="list-col-grow">
+<p><a class="link" href="/files">Captured files</a></p>
+<p class="text-xs text-base-content/60">Every captured file and its VT verdict.</p>
 </div>
 </li>
 <li class="list-row items-center gap-2 px-0 py-2">

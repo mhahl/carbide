@@ -1143,3 +1143,48 @@ class Database:
             "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
             "WHERE s.attacker_ip = %s ORDER BY f.id DESC LIMIT %s",
             (ip, limit), fetch="all")
+
+    _FILE_SORTS = {
+        "name": ("f.name", False),
+        "session_id": ("f.session_id", False),
+        "sensor_id": ("s.sensor_id", False),
+        "attacker_ip": ("s.attacker_ip", False),
+        "size": ("f.size", False),
+        "at": ("f.at", False),
+        "verdict": ("v.status", True),
+    }
+
+    async def list_all_files(self, sensor_id=None, ip=None, verdict=None,
+                             limit=100, offset=0, sort="at",
+                             descending=True):
+        """Every captured file with its session + VT verdict (Files page).
+
+        verdict is a vt_scans status or "unscanned" (no scan row); any
+        other value is ignored.
+        """
+        conds, params = [], []
+        if sensor_id:
+            conds.append("s.sensor_id = %s")
+            params.append(sensor_id)
+        if ip:
+            conds.append("s.attacker_ip = %s")
+            params.append(ip)
+        if verdict == "unscanned":
+            conds.append("v.status IS NULL")
+        elif verdict in ("malicious", "suspicious", "clean", "pending",
+                         "skipped", "error"):
+            conds.append("v.status = %s")
+            params.append(verdict)
+        where = f"WHERE {' AND '.join(conds)}" if conds else ""
+        params.extend([limit, offset])
+        order = self._order_by(self._FILE_SORTS, sort, descending,
+                               "at", True, "f.id DESC")
+        return await self._exec(
+            "SELECT f.id, f.session_id, s.sensor_id, s.attacker_ip, "
+            "f.name, f.blob_sha, f.size, f.at, "
+            "v.status, v.malicious, v.suspicious, v.permalink "
+            "FROM session_files f JOIN sessions s "
+            "ON s.session_id = f.session_id "
+            "LEFT JOIN vt_scans v ON v.sha256 = f.blob_sha "
+            f"{where} {order} LIMIT %s OFFSET %s",
+            tuple(params), fetch="all")

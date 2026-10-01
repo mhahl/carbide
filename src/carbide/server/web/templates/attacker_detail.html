@@ -47,6 +47,7 @@
 <div class="flex items-center gap-2">
 <h2 class="font-medium">Files</h2>
 <span class="badge badge-ghost badge-sm tabular-nums">{{ files|length }}</span>
+<a class="link text-sm ms-auto" href="/files?ip={{ ip }}">All files from this IP</a>
 </div>
 {% if files %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">

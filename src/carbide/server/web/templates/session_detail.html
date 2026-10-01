@@ -68,6 +68,7 @@
 <div class="flex items-center gap-2">
 <h2 class="font-medium">Files</h2>
 {% if files_detected %}<span class="badge badge-error badge-soft badge-sm tabular-nums">{{ files_detected }}/{{ files|length }} detected</span>{% else %}<span class="badge badge-ghost badge-sm tabular-nums">{{ files_detected }}/{{ files|length }} detected</span>{% endif %}
+<a class="link text-sm ms-auto" href="/files">All files</a>
 </div>
 {% if files %}
 <div class="overflow-x-auto max-h-96"><table data-sortable class="table table-xs table-zebra table-pin-rows tabular-nums">

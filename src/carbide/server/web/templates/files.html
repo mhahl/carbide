@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Files — Carbide{% endblock %}
+{% block content %}
+<div class="flex flex-col gap-6">
+<div>
+<h1 class="text-2xl font-semibold tracking-tight">Files</h1>
+<p class="text-sm text-base-content/60">Every file captured from attacker sessions, with VirusTotal verdicts.</p>
+</div>
+<form method="get" action="/files" class="card card-border bg-base-100" role="search">
+<div class="card-body p-4 flex-row flex-wrap items-end gap-2">
+<fieldset class="fieldset">
+<label class="label" for="f-sensor">Sensor</label>
+<input id="f-sensor" type="text" name="sensor" value="{{ sensor }}" placeholder="sensor id" class="input input-sm">
+</fieldset>
+<fieldset class="fieldset">
+<label class="label" for="f-ip">Attacker IP</label>
+<input id="f-ip" type="text" name="ip" value="{{ ip }}" placeholder="attacker ip" class="input input-sm">
+</fieldset>
+<fieldset class="fieldset">
+<label class="label" for="f-verdict">Verdict</label>
+<select id="f-verdict" name="verdict" class="select select-sm">
+<option value="" {% if verdict == "" %}selected{% endif %}>any verdict</option>
+{% for v in verdicts %}
+<option value="{{ v }}" {% if verdict == v %}selected{% endif %}>{{ v }}</option>
+{% endfor %}
+</select>
+</fieldset>
+<button class="btn btn-sm" type="submit">Filter</button>
+{% if sensor or ip or verdict %}<a class="link text-sm" href="/files">Clear</a>{% endif %}
+</div>
+</form>
+<section class="card card-border bg-base-100" aria-label="Captured files">
+<div class="card-body p-4 gap-2">
+<div class="overflow-x-auto max-h-160"><table class="table table-sm table-zebra table-pin-rows tabular-nums">
+<thead><tr><th scope="col" aria-sort="{{ sort_links.name.aria }}"><a class="link" href="/files?{{ sort_links.name.url }}">Name {{ sort_links.name.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.session_id.aria }}"><a class="link" href="/files?{{ sort_links.session_id.url }}">Session {{ sort_links.session_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.sensor_id.aria }}"><a class="link" href="/files?{{ sort_links.sensor_id.url }}">Sensor {{ sort_links.sensor_id.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.attacker_ip.aria }}"><a class="link" href="/files?{{ sort_links.attacker_ip.url }}">Attacker {{ sort_links.attacker_ip.ind }}</a></th><th scope="col" class="text-right" aria-sort="{{ sort_links.size.aria }}"><a class="link" href="/files?{{ sort_links.size.url }}">Size {{ sort_links.size.ind }}</a></th><th scope="col">SHA256</th><th scope="col" aria-sort="{{ sort_links.verdict.aria }}"><a class="link" href="/files?{{ sort_links.verdict.url }}">Verdict {{ sort_links.verdict.ind }}</a></th><th scope="col" aria-sort="{{ sort_links.at.aria }}"><a class="link" href="/files?{{ sort_links.at.url }}">Captured {{ sort_links.at.ind }}</a></th><th scope="col"><span class="sr-only">Scan</span></th><th scope="col"><span class="sr-only">Download</span></th></tr></thead>
+<tbody>
+{% for f in files %}
+<tr class="hover:bg-base-200"><td class="font-mono break-all">{% if f.vt_link %}<a class="link" href="{{ f.vt_link }}">{{ f.name }}</a>{% else %}{{ f.name }}{% endif %}</td>
+<td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ f.session_id }}">{{ f.session_id[:12] }}</a></td>
+<td><a class="link" href="/sessions?sensor={{ f.sensor_id }}">{{ f.sensor_id }}</a></td>
+<td class="font-mono"><a class="link" href="/attackers/{{ f.attacker_ip }}">{{ f.attacker_ip }}</a></td>
+<td class="text-right tabular-nums">{{ f.size|filesizeformat }}</td>
+<td class="font-mono">{% if f.sha %}{{ f.sha[:16] }}…{% else %}—{% endif %}</td>
+<td>{% include "_verdict.html" %}</td>
+<td class="whitespace-nowrap">{{ f.at|ts }}</td>
+<td>{% if f.sha and (not f.vt or f.vt == "error") %}<button class="btn btn-xs btn-ghost" hx-post="/actions/files/{{ f.id }}/scan" hx-target="#action-status" hx-swap="innerHTML">Scan</button>{% endif %}</td>
+<td>{% if f.sha %}<a class="link" href="/files/{{ f.sha }}/download?name={{ f.name.rsplit('/', 1)|last }}">download</a>{% else %}dropped{% endif %}</td></tr>
+{% else %}
+<tr><td colspan="100%">
+<div class="flex flex-col items-center gap-2 py-6 text-center">
+<span class="size-8 rounded-full bg-base-200 flex items-center justify-center" aria-hidden="true">
+<svg xmlns="http://www.w3.org/2000/svg" class="size-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8"><path stroke-linecap="round" stroke-linejoin="round" d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 2v6h6"/></svg>
+</span>
+<p class="text-sm text-base-content/60">No files captured.</p>
+{% if sensor or ip or verdict %}<a class="btn btn-sm" href="/files">Clear filters</a>{% endif %}
+</div>
+</td></tr>
+{% endfor %}
+</tbody></table></div>
+<div class="flex items-center gap-2">
+<div class="join">
+{% if page > 1 %}<a class="join-item btn" href="/files?{{ base_query }}{% if base_query %}&{% endif %}page={{ page - 1 }}">← Prev</a>{% endif %}
+{% if has_more %}<a class="join-item btn" href="/files?{{ base_query }}{% if base_query %}&{% endif %}page={{ page + 1 }}">Next →</a>{% endif %}
+</div>
+<p class="text-sm text-base-content/60">Page {{ page }}</p>
+</div>
+</div>
+</section>
+</div>
+{% endblock %}

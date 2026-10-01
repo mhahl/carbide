@@ -119,10 +119,14 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         body = await (await self.client.get("/")).text()
         self.assertIn('aria-label="Attacker origins"', body)
         self.assertIn("1 countries", body)
-        self.assertIn("<svg viewBox=\"0 0 1000 500\"", body)
-        self.assertIn("<circle", body)
-        self.assertIn("cx=\"515\" cy=\"105\"", body)
+        self.assertIn(
+            '<link rel="stylesheet" href="/static/leaflet.css">', body)
+        self.assertIn('<script src="/static/leaflet.js"></script>', body)
+        self.assertIn('id="attacker-map"', body)
+        self.assertIn('"lat": 52.2', body)
+        self.assertIn('"lon": 5.4', body)
         self.assertIn("Netherlands (NL): 1 attacker, 1 session", body)
+        self.assertNotIn("_world_paths", body)
         self.assertLess(body.index('aria-label="Attacker origins"'),
                         body.index('aria-label="Recent sessions"'))
 
@@ -159,6 +163,12 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         dash = await (await self.client.get("/")).text()
         self.assertIn('href="/attackers/9.9.9.9"', dash)
         self.assertIn('href="/sessions/sess1"', dash)
+        files = await (await self.client.get("/files")).text()
+        self.assertIn('href="/sessions/sess1"', files)
+        self.assertIn('href="/attackers/9.9.9.9"', files)
+        self.assertIn('href="/sessions?sensor=s1"', files)
+        self.assertIn('href="/files"', detail)
+        self.assertIn('href="/files?ip=9.9.9.9"', attacker)
 
     async def test_wireframe_theme_and_active_nav(self):
         await self.login()
@@ -213,6 +223,7 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         for path in ("/", "/sessions", "/sessions/sess1",
                      "/sessions/sess1/transcript?after=0",
                      f"/files/{ref.sha256}/download?name=x",
+                     "/files",
                      "/snapshots", "/compare?a=sess1&b=sess1",
                      "/auth", "/podman",
                      f"/podman/containers/{cid}",
@@ -275,6 +286,71 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(">VT</a>", body)
         self.assertIn("1/1 detected", body)
         self.assertIn("xl:col-span-2", body)
+
+    async def test_files_page_lists_verdicts_filters_and_sorts(self):
+        ref = await self._seed_session()
+        clean = self.blobs.put_bytes(b"benign-readme")
+        await self.db.add_blob(clean.sha256, clean.path, clean.size)
+        await self.db.add_session_file(
+            "sess1", "readme.txt", clean.sha256, clean.size, utcnow())
+        await self.db.add_session_file(
+            "sess1", "dropped-partial", "", 0, utcnow())
+        unknown = self.blobs.put_bytes(b"unknown-binary")
+        await self.db.add_blob(unknown.sha256, unknown.path, unknown.size)
+        await self.db.add_session_file(
+            "sess1", "unknown.bin", unknown.sha256, unknown.size,
+            utcnow())
+        await self.db.save_vt_scan(
+            ref.sha256, "malicious", malicious=9,
+            permalink="https://www.virustotal.com/gui/file/abc")
+        await self.db.save_vt_scan(clean.sha256, "clean", harmless=70)
+        await self.login()
+        body = await (await self.client.get("/files")).text()
+        for name in ("mimikatz.exe", "readme.txt", "dropped-partial",
+                     "unknown.bin"):
+            self.assertIn(name, body)
+        self.assertIn('href="/files" class="active"', body)
+        self.assertIn(
+            'href="https://www.virustotal.com/gui/file/abc"'
+            ">mimikatz.exe</a>", body)
+        self.assertIn("malicious", body)
+        self.assertIn("unscanned", body)
+        self.assertIn('href="/sessions/sess1"', body)
+        self.assertIn('href="/attackers/9.9.9.9"', body)
+        self.assertIn("/files?sort=verdict&amp;dir=asc", body)
+        # Scan only for shas without a verdict; dropped files say so.
+        self.assertIn("/actions/files/3/scan", body)
+        self.assertNotIn("/actions/files/0/scan", body)
+        self.assertIn(
+            f"/files/{unknown.sha256}/download?name=unknown.bin", body)
+        self.assertIn("dropped", body)
+        # Verdict filter narrows to the matching rows.
+        mal = await (
+            await self.client.get("/files?verdict=malicious")).text()
+        self.assertIn("mimikatz.exe", mal)
+        self.assertNotIn("readme.txt", mal)
+        self.assertNotIn("unknown.bin", mal)
+        unsc = await (
+            await self.client.get("/files?verdict=unscanned")).text()
+        self.assertIn("unknown.bin", unsc)
+        self.assertIn("dropped-partial", unsc)
+        self.assertNotIn("mimikatz.exe", unsc)
+        self.assertNotIn("readme.txt", unsc)
+        # Sensor/IP filters and server-side name sort.
+        self.assertIn("mimikatz.exe", await (
+            await self.client.get("/files?sensor=s1")).text())
+        self.assertIn("No files captured.", await (
+            await self.client.get("/files?sensor=nope")).text())
+        self.assertIn("No files captured.", await (
+            await self.client.get("/files?ip=1.2.3.4")).text())
+        by_name = await (
+            await self.client.get("/files?sort=name&dir=asc")).text()
+        self.assertLess(by_name.index("dropped-partial"),
+                        by_name.index("mimikatz.exe"))
+        self.assertLess(by_name.index("mimikatz.exe"),
+                        by_name.index("readme.txt"))
+        self.assertLess(by_name.index("readme.txt"),
+                        by_name.index("unknown.bin"))
 
     async def test_attacker_unscanned_states(self):
         await self._seed_session()
