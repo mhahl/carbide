@@ -1121,6 +1121,19 @@ class Database:
             f"GROUP BY s.attacker_ip, i.status {order} LIMIT %s OFFSET %s",
             (limit, offset), fetch="all")
 
+    async def attacker_geo(self):
+        """Per-country attacker + session counts for the world map."""
+        return await self._exec(
+            "SELECT i.country_code, MAX(i.country) AS country, "
+            "COUNT(DISTINCT s.attacker_ip) AS attackers, "
+            "COUNT(DISTINCT s.session_id) AS sessions "
+            "FROM sessions s "
+            "JOIN ip_intel i ON i.attacker_ip = s.attacker_ip "
+            "WHERE s.attacker_ip <> '' AND i.country_code <> '' "
+            "GROUP BY i.country_code "
+            "ORDER BY attackers DESC",
+            fetch="all")
+
     async def list_files_by_ip(self, ip: str, limit=500):
         return await self._exec(
             "SELECT f.id, f.session_id, f.name, f.blob_sha, f.size, f.at, "

@@ -39,8 +39,8 @@ Include empty
 <tbody>
 {% for s in rows %}
 <tr class="hover:bg-base-200"><td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
-<td>{{ s.sensor_id }}</td><td class="font-mono">{{ s.attacker_ip }}</td><td class="font-mono">{{ s.username }}</td>
-<td class="font-mono">{% if s.container_id %}{{ s.container_id|short }}{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</td>
+<td>{{ s.sensor_id }}</td><td class="font-mono"><a class="link" href="/attackers/{{ s.attacker_ip }}">{{ s.attacker_ip }}</a></td><td class="font-mono">{{ s.username }}</td>
+<td class="font-mono">{% if s.container_id %}<a class="link" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</td>
 <td class="whitespace-nowrap">{{ s.started_at|ts }}</td><td class="whitespace-nowrap">{{ s.ended_at|ts }}</td>
 <td>{% if s.over_quota %}<span class="badge badge-warning badge-soft badge-xs">quota</span>{% endif %}</td></tr>
 {% else %}

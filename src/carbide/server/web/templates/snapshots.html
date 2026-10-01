@@ -22,7 +22,7 @@
 <thead><tr><th scope="col">Image</th><th scope="col">Sensor</th><th scope="col">IP</th><th scope="col">Container</th><th scope="col">Created</th></tr></thead>
 <tbody>
 {% for r in rows %}
-<tr class="hover:bg-base-200"><td class="font-mono break-all">{{ r.image }}</td><td>{{ r.sensor_id }}</td><td class="font-mono">{{ r.ip }}</td>
+<tr class="hover:bg-base-200"><td class="font-mono break-all">{{ r.image }}</td><td><a class="link" href="/sessions?sensor={{ r.sensor_id }}">{{ r.sensor_id }}</a></td><td class="font-mono"><a class="link" href="/attackers/{{ r.ip }}">{{ r.ip }}</a></td>
 <td class="font-mono"><a class="link" href="/podman/containers/{{ r.container_id }}">{{ r.container_id|short }}</a></td>
 <td class="whitespace-nowrap">{{ r.created|ts }}</td></tr>
 {% else %}

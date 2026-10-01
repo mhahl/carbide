@@ -122,9 +122,11 @@ async def logout(request):
 # -- dashboard ---------------------------------------------------------
 @require_auth
 async def dashboard(request):
+    from .geomap import dots
     db = request.app["db"]
     day_ago = (datetime.datetime.now(datetime.timezone.utc)
                - datetime.timedelta(hours=24))
+    geo_dots, geo_unknown = dots(await db.attacker_geo())
     try:
         pods = await request.app["pool"].run_sync(
             request.app["pod"].list_all_containers)
@@ -150,6 +152,8 @@ async def dashboard(request):
             for t in await db.list_squid_hits(limit=8)],
         "logs": request.app["logring"].lines(15),
         "live": request.app["api"].live_sensors(),
+        "geo_dots": geo_dots,
+        "geo_unknown": geo_unknown,
     }
     return render(request, "dashboard.html", ctx)
 

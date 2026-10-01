@@ -47,6 +47,26 @@
 </a>
 </div>
 {% if not podman_ok %}<div class="alert alert-warning alert-soft" role="alert"><span>Podman unreachable from server</span></div>{% endif %}
+<section class="card card-border bg-base-100" aria-label="Attacker origins">
+<div class="card-body p-4 gap-2">
+<div class="flex flex-wrap items-center gap-2">
+<h2 class="font-medium">Attacker origins</h2>
+<span class="badge badge-ghost badge-sm tabular-nums">{{ geo_dots|length }} countries</span>
+{% if geo_unknown %}<span class="badge badge-ghost badge-sm tabular-nums">{{ geo_unknown }} ungeolocated</span>{% endif %}
+<a class="link text-sm ms-auto" href="/attackers">All attackers</a>
+</div>
+{% if geo_dots %}
+<svg viewBox="0 0 1000 500" class="w-full h-auto rounded-lg bg-base-200" role="img" aria-label="World map of attacker countries">
+{% include "_world_paths.html" %}
+{% for d in geo_dots %}
+<circle cx="{{ d.x }}" cy="{{ d.y }}" r="{{ d.r }}" class="{{ d.class }}" stroke-width="1.5" style="stroke: var(--color-base-100)"><title>{{ d.label }}</title></circle>
+{% endfor %}
+</svg>
+{% else %}
+<p class="text-sm text-base-content/60">No geolocated attackers yet — the intel worker fills this in as it scans.</p>
+{% endif %}
+</div>
+</section>
 <section class="card card-border bg-base-100" aria-label="Recent sessions">
 <div class="card-body p-4 gap-2">
 <div class="flex items-center gap-2">
@@ -117,10 +137,10 @@
 <div class="card-body p-4 gap-2">
 <h2 class="font-medium">Recent Squid hits</h2>
 <div class="overflow-x-auto"><table data-sortable class="table table-xs table-zebra tabular-nums">
-<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th></tr></thead>
+<thead><tr><th scope="col">Time</th><th scope="col">Method</th><th scope="col">URL</th><th scope="col" class="text-right" data-sort-type="number">Status</th><th scope="col">Session</th></tr></thead>
 <tbody>
 {% for h in squid %}
-<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url[:80] }}</td><td class="text-right tabular-nums">{{ h.status }}</td></tr>
+<tr class="hover:bg-base-200"><td class="whitespace-nowrap">{{ h.at|ts }}</td><td>{{ h.method }}</td><td class="font-mono break-all">{{ h.url[:80] }}</td><td class="text-right tabular-nums">{{ h.status }}</td><td><a class="link font-mono" href="/sessions/{{ h.session_id }}">{{ h.session_id[:8] }}</a></td></tr>
 {% else %}
 <tr><td colspan="100%">
 <div class="flex flex-col items-center gap-2 py-6 text-center">

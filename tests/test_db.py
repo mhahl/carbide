@@ -386,6 +386,10 @@ class DbTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.db.get_ip_intel_many([]), {})
         self.assertEqual(await self.db.ips_needing_scan(10, cutoff),
                          ["5.6.7.8"])
+        await self.db.save_ip_intel("5.6.7.8", country_code="NL",
+                                    country="Netherlands")
+        rows = await self.db.attacker_geo()
+        self.assertEqual(rows, [("NL", "Netherlands", 2, 2)])
 
     async def test_attacker_overview_queries(self):
         await self.db.ensure_session("a", "s1", "9.9.9.9")

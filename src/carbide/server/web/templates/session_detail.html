@@ -19,7 +19,7 @@
 <div class="card-body p-4 gap-2">
 <dl class="grid sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 text-sm">
 <div><dt class="text-xs text-base-content/60">Sensor</dt><dd class="font-medium"><a class="link" href="/sessions?sensor={{ s.sensor_id }}">{{ s.sensor_id }}</a></dd></div>
-<div><dt class="text-xs text-base-content/60">Attacker</dt><dd class="font-mono font-medium"><a class="link" href="/sessions?ip={{ s.attacker_ip }}">{{ s.attacker_ip }}</a></dd></div>
+<div><dt class="text-xs text-base-content/60">Attacker</dt><dd class="font-mono font-medium"><a class="link" href="/attackers/{{ s.attacker_ip }}">{{ s.attacker_ip }}</a></dd></div>
 <div><dt class="text-xs text-base-content/60">User</dt><dd class="font-mono font-medium">{{ s.username or "—" }}</dd></div>
 <div><dt class="text-xs text-base-content/60">Container</dt><dd class="font-medium">{% if s.container_id %}<a class="link font-mono" href="/podman/containers/{{ s.container_id }}">{{ s.container_id|short }}</a>{% if s.fresh %} <span class="badge badge-xs">fresh</span>{% endif %}{% else %}—{% endif %}</dd></div>
 <div><dt class="text-xs text-base-content/60">Started</dt><dd class="font-medium tabular-nums">{{ s.started_at|ts }}</dd></div>

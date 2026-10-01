@@ -111,6 +111,55 @@ class WebConsoleTest(unittest.IsolatedAsyncioTestCase):
         self.assertLess(body.index('aria-label="Recent sessions"'),
                         body.index('aria-label="Live sensors"'))
 
+    async def test_dashboard_attacker_map(self):
+        await self._seed_session()
+        await self.db.save_ip_intel(
+            "9.9.9.9", country_code="NL", country="Netherlands")
+        await self.login()
+        body = await (await self.client.get("/")).text()
+        self.assertIn('aria-label="Attacker origins"', body)
+        self.assertIn("1 countries", body)
+        self.assertIn("<svg viewBox=\"0 0 1000 500\"", body)
+        self.assertIn("<circle", body)
+        self.assertIn("cx=\"515\" cy=\"105\"", body)
+        self.assertIn("Netherlands (NL): 1 attacker, 1 session", body)
+        self.assertLess(body.index('aria-label="Attacker origins"'),
+                        body.index('aria-label="Recent sessions"'))
+
+    async def test_investigator_pivot_links(self):
+        await self._seed_session()
+        cid = self.pod.create_container(
+            "carbide-test", "img", "honey", 22001, "carbide",
+            {}, 256, 128)
+        await self.db.set_session_container("sess1", cid, True)
+        await self.db.set_affinity("s1", "9.9.9.9", cid, 22001,
+                                   "pw", "10.89.0.2")
+        await self.db.add_snapshot("s1", "9.9.9.9", cid,
+                                   "carbide-snap-x:latest")
+        await self.login()
+        sessions = await (await self.client.get("/sessions")).text()
+        self.assertIn('href="/attackers/9.9.9.9"', sessions)
+        self.assertIn(f'href="/podman/containers/{cid}"', sessions)
+        detail = await (
+            await self.client.get("/sessions/sess1")).text()
+        self.assertIn('href="/attackers/9.9.9.9"', detail)
+        attacker = await (
+            await self.client.get("/attackers/9.9.9.9")).text()
+        self.assertIn(f'href="/podman/containers/{cid}"', attacker)
+        container = await (
+            await self.client.get(f"/podman/containers/{cid}")).text()
+        self.assertIn('href="/attackers/9.9.9.9"', container)
+        self.assertIn('href="/sessions?sensor=s1"', container)
+        self.assertIn("Sessions on this affinity", container)
+        snapshots = await (await self.client.get("/snapshots")).text()
+        self.assertIn('href="/attackers/9.9.9.9"', snapshots)
+        self.assertIn('href="/sessions?sensor=s1"', snapshots)
+        auth = await (await self.client.get("/auth")).text()
+        self.assertIn('href="/sessions?sensor=s1"', auth)
+        dash = await (await self.client.get("/")).text()
+        self.assertIn('href="/attackers/9.9.9.9"', dash)
+        self.assertIn('href="/sessions/sess1"', dash)
+
     async def test_wireframe_theme_and_active_nav(self):
         await self.login()
         body = await (await self.client.get("/")).text()

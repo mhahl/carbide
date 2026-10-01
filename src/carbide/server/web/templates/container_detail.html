@@ -18,10 +18,11 @@
 <div class="card-body p-4 gap-2">
 <h2 class="font-medium">Affinity</h2>
 <dl class="grid sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
-<div><dt class="text-xs text-base-content/60">Sensor</dt><dd class="font-medium">{{ aff.sensor_id }}</dd></div>
-<div><dt class="text-xs text-base-content/60">Attacker IP</dt><dd class="font-mono font-medium">{{ aff.attacker_ip }}</dd></div>
+<div><dt class="text-xs text-base-content/60">Sensor</dt><dd class="font-medium"><a class="link" href="/sessions?sensor={{ aff.sensor_id }}">{{ aff.sensor_id }}</a></dd></div>
+<div><dt class="text-xs text-base-content/60">Attacker IP</dt><dd class="font-mono font-medium"><a class="link" href="/attackers/{{ aff.attacker_ip }}">{{ aff.attacker_ip }}</a></dd></div>
 <div><dt class="text-xs text-base-content/60">SSH port</dt><dd class="font-mono font-medium">{{ aff.ssh_port }}</dd></div>
 </dl>
+<p class="text-sm"><a class="link" href="/sessions?sensor={{ aff.sensor_id }}&amp;ip={{ aff.attacker_ip }}">Sessions on this affinity →</a></p>
 </div>
 </section>
 {% endif %}

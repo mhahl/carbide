@@ -3,7 +3,7 @@
 <tbody>
 {% for s in recent %}
 <tr class="hover:bg-base-200"><td class="whitespace-nowrap"><a class="link font-mono" href="/sessions/{{ s.session_id }}">{{ s.session_id[:12] }}</a></td>
-<td>{{ s.sensor_id }}</td><td class="font-mono">{{ s.attacker_ip }}</td>
+<td>{{ s.sensor_id }}</td><td class="font-mono"><a class="link" href="/attackers/{{ s.attacker_ip }}">{{ s.attacker_ip }}</a></td>
 <td class="whitespace-nowrap">{% if s.geo %}<span title="{{ s.geo_country }}{% if s.geo_org %} · {{ s.geo_org }}{% endif %}">{{ s.geo }}</span>{% if s.geo_org %}<span class="block text-xs text-base-content/60">{{ s.geo_org|truncate(28) }}</span>{% endif %}{% else %}<span class="text-base-content/40">—</span>{% endif %}</td>
 <td class="font-mono text-xs">{% if s.rdns %}{{ s.rdns|truncate(30) }}{% else %}<span class="text-base-content/40">—</span>{% endif %}</td>
 <td class="font-mono">{{ s.username }}</td>

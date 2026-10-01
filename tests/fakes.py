@@ -508,6 +508,24 @@ class FakeDatabase:
         return {i: dict(self.intel[i]) for i in dict.fromkeys(ips)
                 if i and i in self.intel}
 
+    async def attacker_geo(self):
+        by_cc = {}
+        for sid, s in self.sessions.items():
+            ip = s["attacker_ip"]
+            info = self.intel.get(ip) or {}
+            code = info.get("country_code") or ""
+            if not ip or not code:
+                continue
+            entry = by_cc.setdefault(
+                code, {"country": info.get("country") or "",
+                       "ips": set(), "sessions": set()})
+            entry["ips"].add(ip)
+            entry["sessions"].add(sid)
+        rows = [(code, e["country"], len(e["ips"]), len(e["sessions"]))
+                for code, e in by_cc.items()]
+        rows.sort(key=lambda r: r[2], reverse=True)
+        return rows
+
     _ATTACKER_SORT_KEYS = {
         "attacker_ip": lambda r: r[0],
         "sessions": lambda r: r[1],
